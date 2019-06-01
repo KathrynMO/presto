@@ -17,6 +17,7 @@ import com.facebook.presto.testing.MaterializedResult;
 import com.facebook.presto.testing.MaterializedRow;
 import com.facebook.presto.testing.QueryRunner;
 import com.facebook.presto.tests.AbstractTestIntegrationSmokeTest;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Closer;
 import io.airlift.tpch.TpchTable;
 import org.testng.annotations.AfterClass;
@@ -31,6 +32,7 @@ import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.facebook.presto.testing.MaterializedResult.resultBuilder;
 import static com.facebook.presto.testing.assertions.Assert.assertEquals;
 import static java.lang.String.format;
+import static org.elasticsearch.client.Requests.refreshRequest;
 
 public class TestElasticsearchIntegrationSmokeTest
         extends AbstractTestIntegrationSmokeTest
@@ -89,5 +91,33 @@ public class TestElasticsearchIntegrationSmokeTest
                 .row("shippriority", "bigint", "", "")
                 .row("comment", "varchar", "", "").build();
         assertEquals(actualResult, expectedColumns, format("%s != %s", actualResult, expectedColumns));
+    }
+
+    @Test
+    public void testMixedCaseFields()
+    {
+        // add an entry to the index
+        embeddedElasticsearchNode.getClient()
+                .prepareIndex("person", "doc")
+                .setSource(ImmutableMap.<String, Object>builder()
+                        .put("Name", "John")
+                        .put("Age", 20)
+                        .build())
+                .get();
+
+        // ensure the index is up to date
+        embeddedElasticsearchNode.getClient()
+                .admin()
+                .indices()
+                .refresh(refreshRequest("person"))
+                .actionGet();
+
+        assertQuery(
+                "SELECT Name, Age FROM test.person",
+                "VALUES ('John', 20)");
+
+        assertQuery(
+                "SELECT name, age FROM test.person",
+                "VALUES ('John', 20)");
     }
 }
