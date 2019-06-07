@@ -31,7 +31,9 @@ import org.openjdk.jol.info.ClassLayout;
 
 import java.util.Comparator;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.stream.IntStream;
 
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -66,6 +68,8 @@ public class GroupedTopNBuilder
 
     // a map of heaps, each of which records the top N rows
     private final ObjectBigArray<RowHeap> groupedRows = new ObjectBigArray<>();
+    // a map of heaps from row ranks to a list of corresponding rows with the same rank
+    private final ObjectBigArray<TreeMap<Row, List<Row>>> rankToRows = new ObjectBigArray<>();
     // a list of input pages, each of which has information of which row in which heap references which position
     private final ObjectBigArray<PageReference> pageReferences = new ObjectBigArray<>();
     // for heap element comparison
@@ -175,30 +179,70 @@ public class GroupedTopNBuilder
                 memorySizeInBytes -= rows.getEstimatedSizeInBytes();
             }
 
-            if (rows.size() < topN) {
-                // still have space for the current group
-                Row row = new Row(newPageId, position);
-                rows.enqueue(row);
-                newPageReference.reference(row);
-            }
-            else {
-                // may compare with the topN-th element with in the heap to decide if update is necessary
-                Row previousRow = rows.first();
-                Row newRow = new Row(newPageId, position);
-                if (comparator.compare(newRow, previousRow) < 0) {
-                    // update reference and the heap
-                    rows.dequeue();
-                    PageReference previousPageReference = pageReferences.get(previousRow.getPageId());
-                    previousPageReference.dereference(previousRow.getPosition());
-                    newPageReference.reference(newRow);
-                    rows.enqueue(newRow);
+            switch (rankingFunction)
+            {
+            case ROW_NUMBER:
+                if (rows.size() < topN) {
+                    // still have space for the current group
+                    Row row = new Row(newPageId, position);
+                    rows.enqueue(row);
+                    newPageReference.reference(row);
+                }
+                else {
+                    // may compare with the topN-th element with in the heap to decide if update is necessary
+                    Row previousRow = rows.first();
+                    Row newRow = new Row(newPageId, position);
+                    if (comparator.compare(newRow, previousRow) < 0) {
+                        // update reference and the heap
+                        rows.dequeue();
+                        PageReference previousPageReference = pageReferences.get(previousRow.getPageId());
+                        previousPageReference.dereference(previousRow.getPosition());
+                        newPageReference.reference(newRow);
+                        rows.enqueue(newRow);
 
-                    // compact a page if it is not the current input page and the reference count is below the threshold
-                    if (previousPageReference.getPage() != newPage &&
-                            previousPageReference.getUsedPositionCount() * COMPACT_THRESHOLD < previousPageReference.getPage().getPositionCount()) {
-                        pagesToCompact.add(previousRow.getPageId());
+                        // compact a page if it is not the current input page and the reference count is below the threshold
+                        if (previousPageReference.getPage() != newPage &&
+                                previousPageReference.getUsedPositionCount() * COMPACT_THRESHOLD < previousPageReference.getPage().getPositionCount()) {
+                            pagesToCompact.add(previousRow.getPageId());
+                        }
                     }
                 }
+                break;
+            case RANK:
+                TreeMap<Row, List<Row>> map = rankToRows.get(groupId);
+                if (map == null) {
+                    map = new TreeMap<>(Ordering.from(comparator));
+                    rankToRows.set(groupId, map);
+                }
+                Row row = new Row(newPageId, position);
+                if (map.containsKey(row))
+                    map.get(row).add(row);
+                else if (rows.size() < topN) {
+                    rows.enqueue(row);
+                    newPageReference.reference(row);
+                    List<Row> array = new LinkedList<>();
+                    array.add(row);
+                    map.put(row, array);
+                } else {
+                    Row previousRow = rows.first();
+                    if (comparator.compare(row, previousRow) < 0) {
+                        rows.dequeue();
+                        PageReference previousPageReference = pageReferences.get(previousRow.getPageId());
+                        previousPageReference.dereference(previousRow.getPosition());
+                        map.remove(previousRow);
+                        rows.enqueue(row);
+                        newPageReference.reference(row);
+
+                        // compact a page if it is not the current input page and the reference count is below the threshold
+                        if (previousPageReference.getPage() != newPage &&
+                                previousPageReference.getUsedPositionCount() * COMPACT_THRESHOLD < previousPageReference.getPage().getPositionCount()) {
+                            pagesToCompact.add(previousRow.getPageId());
+                        }
+                    }
+                }
+                break;
+            default:
+                break;
             }
 
             memorySizeInBytes += rows.getEstimatedSizeInBytes();
