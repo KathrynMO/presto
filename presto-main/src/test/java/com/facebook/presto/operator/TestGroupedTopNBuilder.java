@@ -203,11 +203,11 @@ public class TestGroupedTopNBuilder
 
         // add 2 new rows for the third page (which will be compacted into two rows only) and we have four heaps with 2, 2, 2, 1 rows respectively
         assertTrue(groupedTopNBuilder.processPage(input.get(2)).process());
-        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         // the last page will be discarded
         assertTrue(groupedTopNBuilder.processPage(input.get(3)).process());
-        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2, 0), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2, 0), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         List<Page> output = ImmutableList.copyOf(groupedTopNBuilder.buildResult());
         assertEquals(output.size(), 1);
@@ -232,7 +232,7 @@ public class TestGroupedTopNBuilder
             assertPageEquals(types, output.get(0), new Page(expected.getBlock(0), expected.getBlock(1)));
         }
 
-        assertBuilderSize(groupByHash, types, ImmutableList.of(0, 0, 0, 0), ImmutableList.of(0, 0, 0, 0), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(0, 0, 0, 0), ImmutableList.of(0, 0, 0, 0), groupedTopNBuilder.getEstimatedSizeInBytes());
     }
 
     @Test(dataProvider = "produceRanking")
@@ -298,7 +298,7 @@ public class TestGroupedTopNBuilder
             assertPageEquals(types, output.get(0), new Page(expected.getBlock(0), expected.getBlock(1)));
         }
 
-        assertBuilderSize(new NoChannelGroupByHash(), types, ImmutableList.of(0, 0, 0), ImmutableList.of(0), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(new NoChannelGroupByHash(), types, ImmutableList.of(0, 0, 0), ImmutableList.of(0), groupedTopNBuilder.getEstimatedSizeInBytes());
     }
 
     @Test(dataProvider = "produceRanking")
@@ -307,33 +307,34 @@ public class TestGroupedTopNBuilder
         List<Type> types = ImmutableList.of(BIGINT, DOUBLE);
         List<Page> input = rowPagesBuilder(types)
                 .row(1L, 0.3)
-                .row(1L, 0.4)
+                .row(3L, 0.4)
                 .pageBreak()
-                .row(1L, 0.9)
+                .row(3L, 0.9)
                 .pageBreak()
-                .row(2L, 0.3)
+                .row(1L, 0.3)
                 .row(1L, 0.8)
-                .row(2L, 0.5)
                 .row(3L, 0.5)
-                .row(3L, 0.3)
+                .row(3L, 0.5)
+                .row(1L, 0.8)
                 .build();
 
         for (Page page : input) {
             page.compact();
         }
 
+        GroupByHash groupByHash = createGroupByHash(ImmutableList.of(types.get(0)), ImmutableList.of(0), NOOP);
         GroupedTopNBuilder groupedTopNBuilder = new GroupedTopNBuilder(
                 types,
                 new SimplePageWithPositionComparator(types, ImmutableList.of(1), ImmutableList.of(ASC_NULLS_LAST)),
-                5,
+                2,
                 RANK,
                 produceRanking,
-                new NoChannelGroupByHash());
-        assertBuilderSize(new NoChannelGroupByHash(), types, ImmutableList.of(), ImmutableList.of(), groupedTopNBuilder.getEstimatedSizeInBytes());
+                groupByHash);
+        assertBuilderSize(groupByHash, types, ImmutableList.of(), ImmutableList.of(), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         // add 2 rows for the first page and created a single heap with 1 rows
         assertTrue(groupedTopNBuilder.processPage(input.get(0)).process());
-//        assertBuilderSize(new NoChannelGroupByHash(), types, ImmutableList.of(1), ImmutableList.of(1), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(1), ImmutableList.of(1), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         assertTrue(groupedTopNBuilder.processPage(input.get(1)).process());
         assertTrue(groupedTopNBuilder.processPage(input.get(2)).process());
@@ -343,13 +344,12 @@ public class TestGroupedTopNBuilder
 
         Page expected = rowPagesBuilder(BIGINT, DOUBLE, BIGINT)
                 .row(1L, 0.3, 1)
-                .row(2L, 0.3, 1)
-                .row(3L, 0.3, 1)
-                .row(1L, 0.4, 4)
-                .row(2L, 0.5, 5)
-                .row(3L, 0.5, 5)
-                .row(1L, 0.8, 7)
-                .row(1L, 0.9, 8)
+                .row(1L, 0.3, 1)
+                .row(1L, 0.8, 3)
+                .row(1L, 0.8, 3)
+                .row(3L, 0.4, 1)
+                .row(3L, 0.5, 2)
+                .row(3L, 0.5, 2)
                 .build()
                 .get(0);
         if (produceRanking) {
@@ -359,7 +359,7 @@ public class TestGroupedTopNBuilder
             assertPageEquals(types, output.get(0), new Page(expected.getBlock(0), expected.getBlock(1)));
         }
 
-//        assertBuilderSize(new NoChannelGroupByHash(), types, ImmutableList.of(0), ImmutableList.of(0), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(0), ImmutableList.of(0), groupedTopNBuilder.getEstimatedSizeInBytes());
     }
 
     @Test(dataProvider = "produceRanking")

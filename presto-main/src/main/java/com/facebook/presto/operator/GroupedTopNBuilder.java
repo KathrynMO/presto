@@ -477,6 +477,7 @@ public class GroupedTopNBuilder
                     // the current group has produced all its rows
                     memorySizeInBytes -= currentGroupSizeInBytes;
                     currentGroupPosition = 0;
+                    currentNumberOfEntries = 0; // reset to 0 when switch to new group
                     currentRows = nextGroupedRows();
                     continue;
                 }
@@ -495,7 +496,7 @@ public class GroupedTopNBuilder
                             outputRow(r, currentRank);
                             currentNumberOfEntries++;
                         }
-                        map.remove(row); // need to remove b/c TreeMap uses comparator to getEntry, so if not removed, map could try to access this row again to compare with future rows even tho it's dereferenced already
+                        map.remove(row); // need to remove b/c TreeMap uses BST comparator to getEntry, so if not removed, map could try to access this row again to compare with future rows even tho it's dereferenced already
                         break;
                 }
 
