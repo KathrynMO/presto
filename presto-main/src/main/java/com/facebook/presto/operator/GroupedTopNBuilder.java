@@ -224,9 +224,9 @@ public class GroupedTopNBuilder
                     else if (rows.size() < topN) {
                         rows.enqueue(row);
                         newPageReference.reference(row);
-                        List<Row> array = new LinkedList<>();
-                        array.add(row);
-                        map.put(row, array);
+//                        List<Row> array = new LinkedList<>();
+//                        array.add(row);
+                        map.put(row, new LinkedList<>());
                     }
                     else {
                         Row previousRow = rows.first();
@@ -234,11 +234,14 @@ public class GroupedTopNBuilder
                             rows.dequeue();
                             PageReference previousPageReference = pageReferences.get(previousRow.getPageId());
                             previousPageReference.dereference(previousRow.getPosition());
+                            for (Row r : map.get(previousRow)) {
+                                previousPageReference.dereference(r.getPosition());
+                            }
                             map.remove(previousRow);
                             rows.enqueue(row);
-                            List<Row> array = new LinkedList<>();
-                            array.add(row);
-                            map.put(row, array);
+//                            List<Row> array = new LinkedList<>();
+//                            array.add(row);
+                            map.put(row, new LinkedList<>());
                             newPageReference.reference(row);
 
                             // compact a page if it is not the current input page and the reference count is below the threshold
@@ -481,23 +484,16 @@ public class GroupedTopNBuilder
                 Row row = currentRows.get(currentGroupPosition);
                 switch (rankingFunction) {
                     case ROW_NUMBER:
-                        writeRow(row, currentGroupPosition);
+                        outputRow(row, currentGroupPosition);
                         break;
                     case RANK:
                         TreeMap<Row, List<Row>> map = rankToRows.get(currentGroupNumber-1); // currentGroupNumber==groupId+1
-                        List<Row> array = map.get(row);
-//                        if (array == null) {
-//                            System.err.println(row);
-//                            System.err.println("=====");
-//                            for (Map.Entry key : map.entrySet()) {
-//                                System.err.println(key + ":" + map.get(key).toString());
-//                            }
-//                        }
                         int currentRank = currentNumberOfEntries;
-                        for (Row r : array) {
-                            writeRow(r, currentRank);
+                        outputRow(row, currentRank);
+                        currentNumberOfEntries++;
+                        for (Row r : map.get(row)) {
+                            outputRow(r, currentRank);
                             currentNumberOfEntries++;
-                            pageBuilder.declarePosition();
                         }
                         break;
                 }
@@ -511,7 +507,6 @@ public class GroupedTopNBuilder
 
                 // deference the row; no need to compact the pages but remove them if completely unused
                 PageReference pageReference = pageReferences.get(row.getPageId());
-                pageReference.dereference(row.getPosition());
                 if (pageReference.getUsedPositionCount() == 0) {
                     pageReferences.set(row.getPageId(), null);
                     memorySizeInBytes -= pageReference.getEstimatedSizeInBytes();
@@ -524,7 +519,7 @@ public class GroupedTopNBuilder
             return pageBuilder.build();
         }
 
-        private void writeRow(Row row, int ranking)
+        private void outputRow(Row row, int ranking)
         {
             for (int i = 0; i < sourceTypes.size(); i++) {
                 sourceTypes.get(i).appendTo(pageReferences.get(row.getPageId()).getPage().getBlock(i), row.getPosition(), pageBuilder.getBlockBuilder(i));
@@ -532,6 +527,9 @@ public class GroupedTopNBuilder
             if (produceRanking) {
                 BIGINT.writeLong(pageBuilder.getBlockBuilder(sourceTypes.size()), ranking + 1);
             }
+            pageBuilder.declarePosition();
+            PageReference pageReference = pageReferences.get(row.getPageId());
+            pageReference.dereference(row.getPosition());
         }
 
         private ObjectBigArray<Row> nextGroupedRows()
@@ -542,16 +540,7 @@ public class GroupedTopNBuilder
                 groupedRows.set(currentGroupNumber, null);
                 currentGroupSizeInBytes = rows.getEstimatedSizeInBytes();
                 currentGroupNumber++;
-//                if (rankingFunction == ROW_NUMBER) {
                 currentGroupSize = rows.size();
-//                }
-//                else if (rankingFunction == RANK) {
-//                    TreeMap<Row, List<Row>> map = rankToRows.get(currentGroupNumber-1);
-//                    currentGroupSize = 0;
-//                    for (Map.Entry<Row, List<Row>> entry: map.entrySet()) {
-//                        currentGroupSize += entry.getValue().size();
-//                    }
-//                }
 
                 // sort output rows in a big array in case there are too many rows
                 ObjectBigArray<Row> sortedRows = new ObjectBigArray<>();
