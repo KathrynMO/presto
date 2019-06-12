@@ -495,6 +495,7 @@ public class GroupedTopNBuilder
                             outputRow(r, currentRank);
                             currentNumberOfEntries++;
                         }
+                        map.remove(row); // need to remove b/c TreeMap uses comparator to getEntry, so if not removed, map could try to access this row again to compare with future rows even tho it's dereferenced already
                         break;
                 }
 
