@@ -219,7 +219,7 @@ public class TestGroupedTopNBuilder
                 .row(2L, 0.2, 1)
                 .row(2L, 0.2, 1)
                 .row(2L, 0.2, 1)
-                .row(2L, 0.8, 2)
+                .row(2L, 0.8, 4)
                 .row(3L, 0.1, 1)
                 .row(3L, 0.9, 2)
                 .row(4L, 0.6, 1)
