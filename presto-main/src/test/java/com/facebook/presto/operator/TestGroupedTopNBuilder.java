@@ -203,11 +203,11 @@ public class TestGroupedTopNBuilder
 
         // add 2 new rows for the third page (which will be compacted into two rows only) and we have four heaps with 2, 2, 2, 1 rows respectively
         assertTrue(groupedTopNBuilder.processPage(input.get(2)).process());
-//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 4), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         // the last page will be discarded
         assertTrue(groupedTopNBuilder.processPage(input.get(3)).process());
-//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 2, 0), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
+//        assertBuilderSize(groupByHash, types, ImmutableList.of(4, 1, 4, 1), ImmutableList.of(2, 2, 2, 1), groupedTopNBuilder.getEstimatedSizeInBytes());
 
         List<Page> output = ImmutableList.copyOf(groupedTopNBuilder.buildResult());
         assertEquals(output.size(), 1);
