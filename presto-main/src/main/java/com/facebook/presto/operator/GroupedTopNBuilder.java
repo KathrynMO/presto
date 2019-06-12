@@ -33,12 +33,9 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.IntStream;
 
-import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.RANK;
-import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.ROW_NUMBER;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -450,7 +447,7 @@ public class GroupedTopNBuilder
         private int currentGroupPosition;
         // number of rows in the group
         private int currentGroupSize;
-        private int currentNumberOfEntries = 0;
+        private int currentNumberOfEntries;
 
         private ObjectBigArray<Row> currentRows = nextGroupedRows();
 
@@ -488,7 +485,7 @@ public class GroupedTopNBuilder
                         outputRow(row, currentGroupPosition);
                         break;
                     case RANK:
-                        TreeMap<Row, List<Row>> map = rankToRows.get(currentGroupNumber-1); // currentGroupNumber==groupId+1
+                        TreeMap<Row, List<Row>> map = rankToRows.get(currentGroupNumber - 1); // currentGroupNumber==groupId+1
                         int currentRank = currentNumberOfEntries;
                         outputRow(row, currentRank);
                         currentNumberOfEntries++;
