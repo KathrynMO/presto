@@ -221,8 +221,6 @@ public class GroupedTopNBuilder
                     else if (rows.size() < topN) {
                         rows.enqueue(row);
                         newPageReference.reference(row);
-//                        List<Row> array = new LinkedList<>();
-//                        array.add(row);
                         map.put(row, new LinkedList<>());
                     }
                     else {
@@ -236,8 +234,6 @@ public class GroupedTopNBuilder
                             }
                             map.remove(previousRow);
                             rows.enqueue(row);
-//                            List<Row> array = new LinkedList<>();
-//                            array.add(row);
                             map.put(row, new LinkedList<>());
                             newPageReference.reference(row);
 
@@ -497,12 +493,7 @@ public class GroupedTopNBuilder
                         break;
                 }
 
-//                if (rankingFunction == RankingFunction.RANK) {
-//                    currentGroupPosition+=currentRankCount;
-//                }
-//                else {
                 currentGroupPosition++;
-//                }
 
                 // deference the row; no need to compact the pages but remove them if completely unused
                 PageReference pageReference = pageReferences.get(row.getPageId());
