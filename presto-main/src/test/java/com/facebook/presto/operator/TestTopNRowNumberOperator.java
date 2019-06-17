@@ -38,6 +38,7 @@ import static com.facebook.presto.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.operator.GroupByHashYieldAssertion.createPagesWithDistinctHashKeys;
 import static com.facebook.presto.operator.GroupByHashYieldAssertion.finishOperatorWithYieldingGroupByHash;
+import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.RANK;
 import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.ROW_NUMBER;
 import static com.facebook.presto.operator.OperatorAssertion.assertOperatorEquals;
 import static com.facebook.presto.operator.TopNRowNumberOperator.TopNRowNumberOperatorFactory;
@@ -139,6 +140,57 @@ public class TestTopNRowNumberOperator
         assertOperatorEquals(operatorFactory, driverContext, input, expected);
     }
 
+    @Test(dataProvider = "hashEnabledValues")
+    public void testPartitionedRank(boolean hashEnabled)
+    {
+        RowPagesBuilder rowPagesBuilder = rowPagesBuilder(hashEnabled, Ints.asList(0), BIGINT, DOUBLE);
+        List<Page> input = rowPagesBuilder
+                .row(1L, 0.3)
+                .row(2L, 0.2)
+                .row(3L, 0.91)
+                .row(3L, 0.1)
+                .pageBreak()
+                .row(1L, 0.4)
+                .pageBreak()
+                .row(1L, 0.4)
+                .row(1L, 0.3)
+                .row(2L, 0.2)
+                .row(2L, 0.9)
+                .pageBreak()
+                .row(2L, 0.7)
+                .build();
+
+        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+                0,
+                new PlanNodeId("test"),
+                RANK,
+                ImmutableList.of(BIGINT, DOUBLE),
+                Ints.asList(1, 0),
+                Ints.asList(0),
+                ImmutableList.of(BIGINT),
+                Ints.asList(1),
+                ImmutableList.of(SortOrder.ASC_NULLS_LAST),
+                2,
+                false,
+                Optional.empty(),
+                10,
+                joinCompiler);
+
+        MaterializedResult expected = resultBuilder(driverContext.getSession(), DOUBLE, BIGINT, BIGINT)
+                .row(0.3, 1L, 1L)
+                .row(0.3, 1L, 1L)
+                .row(0.4, 1L, 3L)
+                .row(0.4, 1L, 3L)
+                .row(0.2, 2L, 1L)
+                .row(0.2, 2L, 1L)
+                .row(0.7, 2L, 3L)
+                .row(0.1, 3L, 1L)
+                .row(0.91, 3L, 2L)
+                .build();
+
+        assertOperatorEquals(operatorFactory, driverContext, input, expected);
+    }
+
     @Test(dataProvider = "partial")
     public void testUnPartitioned(boolean partial)
     {
@@ -187,6 +239,64 @@ public class TestTopNRowNumberOperator
                     .row(0.1, 3L, 1L)
                     .row(0.2, 2L, 2L)
                     .row(0.3, 1L, 3L)
+                    .build();
+        }
+
+        assertOperatorEquals(operatorFactory, driverContext, input, expected);
+    }
+
+    @Test(dataProvider = "partial")
+    public void testUnPartitionedRank(boolean partial)
+    {
+        List<Page> input = rowPagesBuilder(BIGINT, DOUBLE)
+                .row(2L, 0.3)
+                .row(2L, 0.2)
+                .row(3L, 0.91)
+                .row(3L, 0.1)
+                .pageBreak()
+                .row(1L, 0.4)
+                .pageBreak()
+                .row(1L, 0.4)
+                .row(1L, 0.3)
+                .row(2L, 0.2)
+                .row(2L, 0.9)
+                .pageBreak()
+                .row(2L, 0.7)
+                .build();
+
+        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+                0,
+                new PlanNodeId("test"),
+                RANK,
+                ImmutableList.of(BIGINT, DOUBLE),
+                Ints.asList(1, 0),
+                Ints.asList(),
+                ImmutableList.of(),
+                Ints.asList(1),
+                ImmutableList.of(SortOrder.ASC_NULLS_LAST),
+                3,
+                partial,
+                Optional.empty(),
+                10,
+                joinCompiler);
+
+        MaterializedResult expected;
+        if (partial) {
+            expected = resultBuilder(driverContext.getSession(), DOUBLE, BIGINT)
+                    .row(0.1, 3L)
+                    .row(0.2, 2L)
+                    .row(0.2, 2L)
+                    .row(0.3, 2L)
+                    .row(0.3, 1L)
+                    .build();
+        }
+        else {
+            expected = resultBuilder(driverContext.getSession(), DOUBLE, BIGINT, BIGINT)
+                    .row(0.1, 3L, 1L)
+                    .row(0.2, 2L, 2L)
+                    .row(0.2, 2L, 2L)
+                    .row(0.3, 2L, 4L)
+                    .row(0.3, 1L, 4L)
                     .build();
         }
 
