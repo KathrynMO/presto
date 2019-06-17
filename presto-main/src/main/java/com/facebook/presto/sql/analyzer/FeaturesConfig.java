@@ -117,6 +117,7 @@ public class FeaturesConfig
     private boolean useMarkDistinct = true;
     private boolean preferPartialAggregation = true;
     private boolean optimizeTopNRowNumber = true;
+    private boolean optimizeTopNRank = true;
 
     private Duration iterativeOptimizerTimeout = new Duration(3, MINUTES); // by default let optimizer wait a long time in case it retrieves some data from ConnectorMetadata
 
@@ -501,10 +502,22 @@ public class FeaturesConfig
         return optimizeTopNRowNumber;
     }
 
+    public boolean isOptimizeTopNRank()
+    {
+        return optimizeTopNRank;
+    }
+
     @Config("optimizer.optimize-top-n-row-number")
     public FeaturesConfig setOptimizeTopNRowNumber(boolean optimizeTopNRowNumber)
     {
         this.optimizeTopNRowNumber = optimizeTopNRowNumber;
+        return this;
+    }
+
+    @Config("optimizer.optimize-top-n-rank")
+    public FeaturesConfig setOptimizeTopNRank(boolean optimizeTopNRank)
+    {
+        this.optimizeTopNRank = optimizeTopNRank;
         return this;
     }
 

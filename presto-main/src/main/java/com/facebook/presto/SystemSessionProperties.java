@@ -512,6 +512,11 @@ public final class SystemSessionProperties
                         "Use top N row number optimization",
                         featuresConfig.isOptimizeTopNRowNumber(),
                         false),
+                booleanProperty(
+                        OPTIMIZE_TOP_N_RANK,
+                        "Use top N rank optimization",
+                        featuresConfig.isOptimizeTopNRank(),
+                        false),
                 integerProperty(
                         MAX_GROUPING_SETS,
                         "Maximum number of grouping sets in a GROUP BY",
