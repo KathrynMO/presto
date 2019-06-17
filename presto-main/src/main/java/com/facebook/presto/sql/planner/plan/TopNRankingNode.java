@@ -116,6 +116,12 @@ public final class TopNRankingNode
     }
 
     @JsonProperty
+    public RankingFunction getRankingFunction()
+    {
+        return rankingFunction;
+    }
+
+    @JsonProperty
     public int getMaxRowCountPerPartition()
     {
         return maxRowCountPerPartition;

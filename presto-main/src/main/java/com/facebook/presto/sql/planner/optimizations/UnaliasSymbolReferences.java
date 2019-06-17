@@ -392,6 +392,7 @@ public class UnaliasSymbolReferences
                     context.rewrite(node.getSource()),
                     canonicalizeAndDistinct(node.getSpecification()),
                     canonicalize(node.getSymbol()),
+                    node.getRankingFunction(),
                     node.getMaxRowCountPerPartition(),
                     node.isPartial(),
                     canonicalize(node.getHashSymbol()));

@@ -381,6 +381,7 @@ public class AddExchanges
                                 child.getNode(),
                                 node.getSpecification(),
                                 node.getSymbol(),
+                                node.getRankingFunction(),
                                 node.getMaxRowCountPerPartition(),
                                 true,
                                 node.getHashSymbol()),

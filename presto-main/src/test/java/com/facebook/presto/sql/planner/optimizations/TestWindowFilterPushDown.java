@@ -21,6 +21,7 @@ import com.facebook.presto.sql.planner.plan.WindowNode;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.Test;
 
+import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_TOP_N_RANK;
 import static com.facebook.presto.SystemSessionProperties.OPTIMIZE_TOP_N_ROW_NUMBER;
 import static com.facebook.presto.sql.planner.assertions.PlanMatchPattern.anyNot;
 import static com.facebook.presto.sql.planner.assertions.PlanMatchPattern.anyTree;
@@ -91,6 +92,69 @@ public class TestWindowFilterPushDown
     {
         return Session.builder(this.getQueryRunner().getDefaultSession())
                 .setSystemProperty(OPTIMIZE_TOP_N_ROW_NUMBER, Boolean.toString(enabled))
+                .build();
+    }
+
+    @Test
+    public void testLimitAboveWindowForRank()
+    {
+        @Language("SQL") String sql = "SELECT " +
+                "rank() OVER (PARTITION BY suppkey ORDER BY orderkey) partition_row_number FROM lineitem LIMIT 10";
+
+        assertPlanWithSession(
+                sql,
+                optimizeTopNRank(true),
+                true,
+                anyTree(
+                        limit(10, anyTree(
+                                node(TopNRankingNode.class,
+                                        anyTree(
+                                                tableScan("lineitem")))))));
+
+        assertPlanWithSession(
+                sql,
+                optimizeTopNRank(false),
+                true,
+                anyTree(
+                        limit(10, anyTree(
+                                node(WindowNode.class,
+                                        anyTree(
+                                                tableScan("lineitem")))))));
+    }
+
+    @Test
+    public void testFilterAboveWindowForRank()
+    {
+        @Language("SQL") String sql = "SELECT * FROM " +
+                "(SELECT rank() OVER (PARTITION BY suppkey ORDER BY orderkey) partition_row_number FROM lineitem) " +
+                "WHERE partition_row_number < 10";
+
+        assertPlanWithSession(
+                sql,
+                optimizeTopNRank(true),
+                true,
+                anyTree(
+                        anyNot(FilterNode.class,
+                                node(TopNRankingNode.class,
+                                        anyTree(
+                                                tableScan("lineitem"))))));
+
+        assertPlanWithSession(
+                sql,
+                optimizeTopNRank(false),
+                true,
+                anyTree(
+                        node(FilterNode.class,
+                                anyTree(
+                                        node(WindowNode.class,
+                                                anyTree(
+                                                        tableScan("lineitem")))))));
+    }
+
+    private Session optimizeTopNRank(boolean enabled)
+    {
+        return Session.builder(this.getQueryRunner().getDefaultSession())
+                .setSystemProperty(OPTIMIZE_TOP_N_RANK, Boolean.toString(enabled))
                 .build();
     }
 }

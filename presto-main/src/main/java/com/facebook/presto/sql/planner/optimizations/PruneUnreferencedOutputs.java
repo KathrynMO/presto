@@ -661,6 +661,7 @@ public class PruneUnreferencedOutputs
                     source,
                     node.getSpecification(),
                     node.getSymbol(),
+                    node.getRankingFunction(),
                     node.getMaxRowCountPerPartition(),
                     node.isPartial(),
                     node.getHashSymbol());
