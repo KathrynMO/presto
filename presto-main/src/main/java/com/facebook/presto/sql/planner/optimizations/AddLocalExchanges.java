@@ -456,7 +456,7 @@ public class AddLocalExchanges
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, StreamPreferredProperties parentPreferences)
+        public PlanWithProperties visitTopNRanking(TopNRankingNode node, StreamPreferredProperties parentPreferences)
         {
             StreamPreferredProperties requiredProperties = parentPreferences.withDefaultParallelism(session);
 

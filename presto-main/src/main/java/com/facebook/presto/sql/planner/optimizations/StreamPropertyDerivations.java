@@ -500,7 +500,7 @@ public final class StreamPropertyDerivations
         }
 
         @Override
-        public StreamProperties visitTopNRowNumber(TopNRankingNode node, List<StreamProperties> inputProperties)
+        public StreamProperties visitTopNRanking(TopNRankingNode node, List<StreamProperties> inputProperties)
         {
             return Iterables.getOnlyElement(inputProperties);
         }

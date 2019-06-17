@@ -814,7 +814,7 @@ public class LocalExecutionPlanner
         }
 
         @Override
-        public PhysicalOperation visitTopNRowNumber(TopNRankingNode node, LocalExecutionPlanContext context)
+        public PhysicalOperation visitTopNRanking(TopNRankingNode node, LocalExecutionPlanContext context)
         {
             PhysicalOperation source = node.getSource().accept(this, context);
 
@@ -849,6 +849,7 @@ public class LocalExecutionPlanner
             OperatorFactory operatorFactory = new TopNRowNumberOperator.TopNRowNumberOperatorFactory(
                     context.getNextOperatorId(),
                     node.getId(),
+                    node.getRankingFunction(),
                     source.getTypes(),
                     outputChannels.build(),
                     partitionChannels,

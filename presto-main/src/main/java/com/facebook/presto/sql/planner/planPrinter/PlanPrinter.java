@@ -580,7 +580,7 @@ public class PlanPrinter
         }
 
         @Override
-        public Void visitTopNRowNumber(TopNRankingNode node, Void context)
+        public Void visitTopNRanking(TopNRankingNode node, Void context)
         {
             List<String> partitionBy = node.getPartitionBy().stream()
                     .map(Functions.toStringFunction())

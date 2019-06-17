@@ -266,7 +266,7 @@ public class DistributedExecutionPlanner
         }
 
         @Override
-        public Map<PlanNodeId, SplitSource> visitTopNRowNumber(TopNRankingNode node, Void context)
+        public Map<PlanNodeId, SplitSource> visitTopNRanking(TopNRankingNode node, Void context)
         {
             return node.getSource().accept(this, context);
         }

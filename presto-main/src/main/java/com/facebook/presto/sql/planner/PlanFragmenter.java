@@ -630,7 +630,7 @@ public class PlanFragmenter
         }
 
         @Override
-        public GroupedExecutionProperties visitTopNRowNumber(TopNRankingNode node, Void context)
+        public GroupedExecutionProperties visitTopNRanking(TopNRankingNode node, Void context)
         {
             return processWindowFunction(node);
         }

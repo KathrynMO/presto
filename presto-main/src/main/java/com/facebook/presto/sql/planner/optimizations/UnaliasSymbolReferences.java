@@ -385,7 +385,7 @@ public class UnaliasSymbolReferences
         }
 
         @Override
-        public PlanNode visitTopNRowNumber(TopNRankingNode node, RewriteContext<Void> context)
+        public PlanNode visitTopNRanking(TopNRankingNode node, RewriteContext<Void> context)
         {
             return new TopNRankingNode(
                     node.getId(),

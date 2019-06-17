@@ -38,6 +38,7 @@ import static com.facebook.presto.RowPagesBuilder.rowPagesBuilder;
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.operator.GroupByHashYieldAssertion.createPagesWithDistinctHashKeys;
 import static com.facebook.presto.operator.GroupByHashYieldAssertion.finishOperatorWithYieldingGroupByHash;
+import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.ROW_NUMBER;
 import static com.facebook.presto.operator.OperatorAssertion.assertOperatorEquals;
 import static com.facebook.presto.operator.TopNRowNumberOperator.TopNRowNumberOperatorFactory;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
@@ -111,6 +112,7 @@ public class TestTopNRowNumberOperator
         TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
                 0,
                 new PlanNodeId("test"),
+                ROW_NUMBER,
                 ImmutableList.of(BIGINT, DOUBLE),
                 Ints.asList(1, 0),
                 Ints.asList(0),
@@ -159,6 +161,7 @@ public class TestTopNRowNumberOperator
         TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
                 0,
                 new PlanNodeId("test"),
+                ROW_NUMBER,
                 ImmutableList.of(BIGINT, DOUBLE),
                 Ints.asList(1, 0),
                 Ints.asList(),
@@ -198,6 +201,7 @@ public class TestTopNRowNumberOperator
         OperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
                 0,
                 new PlanNodeId("test"),
+                ROW_NUMBER,
                 ImmutableList.of(type),
                 ImmutableList.of(0),
                 ImmutableList.of(0),

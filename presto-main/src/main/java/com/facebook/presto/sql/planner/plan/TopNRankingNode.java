@@ -142,7 +142,7 @@ public final class TopNRankingNode
     @Override
     public <R, C> R accept(PlanVisitor<R, C> visitor, C context)
     {
-        return visitor.visitTopNRowNumber(this, context);
+        return visitor.visitTopNRanking(this, context);
     }
 
     @Override

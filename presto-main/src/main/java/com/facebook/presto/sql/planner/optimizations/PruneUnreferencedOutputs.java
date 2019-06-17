@@ -645,7 +645,7 @@ public class PruneUnreferencedOutputs
         }
 
         @Override
-        public PlanNode visitTopNRowNumber(TopNRankingNode node, RewriteContext<Set<Symbol>> context)
+        public PlanNode visitTopNRanking(TopNRankingNode node, RewriteContext<Set<Symbol>> context)
         {
             ImmutableSet.Builder<Symbol> expectedInputs = ImmutableSet.<Symbol>builder()
                     .addAll(context.get())

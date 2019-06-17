@@ -14,6 +14,7 @@
 package com.facebook.presto.operator;
 
 import com.facebook.presto.memory.context.LocalMemoryContext;
+import com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.block.Block;
 import com.facebook.presto.spi.block.SortOrder;
@@ -30,7 +31,6 @@ import java.util.Optional;
 
 import static com.facebook.presto.SystemSessionProperties.isDictionaryAggregationEnabled;
 import static com.facebook.presto.operator.GroupByHash.createGroupByHash;
-import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.ROW_NUMBER;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -44,6 +44,7 @@ public class TopNRowNumberOperator
     {
         private final int operatorId;
         private final PlanNodeId planNodeId;
+        private final RankingFunction rankingFunction;
 
         private final List<Type> sourceTypes;
 
@@ -64,6 +65,7 @@ public class TopNRowNumberOperator
         public TopNRowNumberOperatorFactory(
                 int operatorId,
                 PlanNodeId planNodeId,
+                RankingFunction rankingFunction,
                 List<? extends Type> sourceTypes,
                 List<Integer> outputChannels,
                 List<Integer> partitionChannels,
@@ -78,6 +80,7 @@ public class TopNRowNumberOperator
         {
             this.operatorId = operatorId;
             this.planNodeId = requireNonNull(planNodeId, "planNodeId is null");
+            this.rankingFunction = rankingFunction;
             this.sourceTypes = ImmutableList.copyOf(sourceTypes);
             this.outputChannels = ImmutableList.copyOf(requireNonNull(outputChannels, "outputChannels is null"));
             this.partitionChannels = ImmutableList.copyOf(requireNonNull(partitionChannels, "partitionChannels is null"));
@@ -100,6 +103,7 @@ public class TopNRowNumberOperator
             checkState(!closed, "Factory is already closed");
             OperatorContext operatorContext = driverContext.addOperatorContext(operatorId, planNodeId, TopNRowNumberOperator.class.getSimpleName());
             return new TopNRowNumberOperator(
+                    rankingFunction,
                     operatorContext,
                     sourceTypes,
                     outputChannels,
@@ -123,7 +127,7 @@ public class TopNRowNumberOperator
         @Override
         public OperatorFactory duplicate()
         {
-            return new TopNRowNumberOperatorFactory(operatorId, planNodeId, sourceTypes, outputChannels, partitionChannels, partitionTypes, sortChannels, sortOrder, maxRowCountPerPartition, partial, hashChannel, expectedPositions, joinCompiler);
+            return new TopNRowNumberOperatorFactory(operatorId, planNodeId, rankingFunction, sourceTypes, outputChannels, partitionChannels, partitionTypes, sortChannels, sortOrder, maxRowCountPerPartition, partial, hashChannel, expectedPositions, joinCompiler);
         }
     }
 
@@ -140,6 +144,7 @@ public class TopNRowNumberOperator
     private Iterator<Page> outputIterator;
 
     public TopNRowNumberOperator(
+            RankingFunction rankingFunction,
             OperatorContext operatorContext,
             List<? extends Type> sourceTypes,
             List<Integer> outputChannels,
@@ -187,7 +192,7 @@ public class TopNRowNumberOperator
                 ImmutableList.copyOf(sourceTypes),
                 new SimplePageWithPositionComparator(types, sortChannels, sortOrders),
                 maxRowCountPerPartition,
-                ROW_NUMBER,
+                rankingFunction,
                 generateRowNumber,
                 groupByHash);
     }

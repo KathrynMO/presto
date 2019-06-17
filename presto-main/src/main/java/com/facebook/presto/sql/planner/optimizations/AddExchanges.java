@@ -356,7 +356,7 @@ public class AddExchanges
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, PreferredProperties preferredProperties)
+        public PlanWithProperties visitTopNRanking(TopNRankingNode node, PreferredProperties preferredProperties)
         {
             PreferredProperties preferredChildProperties;
             Function<PlanNode, PlanNode> addExchange;

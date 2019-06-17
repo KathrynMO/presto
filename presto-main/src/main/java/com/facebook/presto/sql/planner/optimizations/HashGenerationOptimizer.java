@@ -271,7 +271,7 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, HashComputationSet parentPreference)
+        public PlanWithProperties visitTopNRanking(TopNRankingNode node, HashComputationSet parentPreference)
         {
             if (node.getPartitionBy().isEmpty()) {
                 return planSimpleNodeWithProperties(node, parentPreference);

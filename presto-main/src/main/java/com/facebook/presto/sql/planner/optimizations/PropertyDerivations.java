@@ -308,7 +308,7 @@ public class PropertyDerivations
         }
 
         @Override
-        public ActualProperties visitTopNRowNumber(TopNRankingNode node, List<ActualProperties> inputProperties)
+        public ActualProperties visitTopNRanking(TopNRankingNode node, List<ActualProperties> inputProperties)
         {
             ActualProperties properties = Iterables.getOnlyElement(inputProperties);
 

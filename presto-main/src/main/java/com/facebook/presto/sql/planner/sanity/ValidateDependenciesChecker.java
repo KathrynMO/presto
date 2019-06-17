@@ -192,7 +192,7 @@ public final class ValidateDependenciesChecker
         }
 
         @Override
-        public Void visitTopNRowNumber(TopNRankingNode node, Set<Symbol> boundSymbols)
+        public Void visitTopNRanking(TopNRankingNode node, Set<Symbol> boundSymbols)
         {
             PlanNode source = node.getSource();
             source.accept(this, boundSymbols); // visit child

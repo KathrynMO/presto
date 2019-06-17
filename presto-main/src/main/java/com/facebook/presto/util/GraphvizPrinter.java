@@ -285,7 +285,7 @@ public final class GraphvizPrinter
         }
 
         @Override
-        public Void visitTopNRowNumber(TopNRankingNode node, Void context)
+        public Void visitTopNRanking(TopNRankingNode node, Void context)
         {
             printNode(node,
                     "TopNRowNumber",
