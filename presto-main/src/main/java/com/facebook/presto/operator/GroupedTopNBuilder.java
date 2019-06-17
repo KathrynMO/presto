@@ -50,7 +50,7 @@ import static java.util.Objects.requireNonNull;
  */
 public class GroupedTopNBuilder
 {
-    enum RankingFunction
+    public enum RankingFunction
     {
         ROW_NUMBER, RANK, DENSE_RANK
     }

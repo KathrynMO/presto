@@ -380,7 +380,7 @@ public class AddExchanges
                                 idAllocator.getNextId(),
                                 child.getNode(),
                                 node.getSpecification(),
-                                node.getRowNumberSymbol(),
+                                node.getSymbol(),
                                 node.getMaxRowCountPerPartition(),
                                 true,
                                 node.getHashSymbol()),

@@ -842,7 +842,7 @@ public class LocalExecutionPlanner
             if (!node.isPartial() || !partitionChannels.isEmpty()) {
                 // row number function goes in the last channel
                 int channel = source.getTypes().size();
-                outputMappings.put(node.getRowNumberSymbol(), channel);
+                outputMappings.put(node.getSymbol(), channel);
             }
 
             Optional<Integer> hashChannel = node.getHashSymbol().map(channelGetter(source));

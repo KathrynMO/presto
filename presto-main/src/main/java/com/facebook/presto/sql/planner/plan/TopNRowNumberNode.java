@@ -13,6 +13,9 @@
  */
 package com.facebook.presto.sql.planner.plan;
 
+import com.facebook.presto.operator.GroupedTopNBuilder;
+import com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction;
+import com.facebook.presto.operator.window.RankFunction;
 import com.facebook.presto.sql.planner.OrderingScheme;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.plan.WindowNode.Specification;
@@ -36,7 +39,8 @@ public final class TopNRowNumberNode
 {
     private final PlanNode source;
     private final Specification specification;
-    private final Symbol rowNumberSymbol;
+    private final Symbol symbol;
+    private final RankingFunction rankingFunction;
     private final int maxRowCountPerPartition;
     private final boolean partial;
     private final Optional<Symbol> hashSymbol;
@@ -46,7 +50,8 @@ public final class TopNRowNumberNode
             @JsonProperty("id") PlanNodeId id,
             @JsonProperty("source") PlanNode source,
             @JsonProperty("specification") Specification specification,
-            @JsonProperty("rowNumberSymbol") Symbol rowNumberSymbol,
+            @JsonProperty("symbol") Symbol symbol,
+            @JsonProperty("rankingFunction") RankingFunction rankingFunction,
             @JsonProperty("maxRowCountPerPartition") int maxRowCountPerPartition,
             @JsonProperty("partial") boolean partial,
             @JsonProperty("hashSymbol") Optional<Symbol> hashSymbol)
@@ -56,13 +61,14 @@ public final class TopNRowNumberNode
         requireNonNull(source, "source is null");
         requireNonNull(specification, "specification is null");
         checkArgument(specification.getOrderingScheme().isPresent(), "specification orderingScheme is absent");
-        requireNonNull(rowNumberSymbol, "rowNumberSymbol is null");
+        requireNonNull(symbol, "symbol is null");
         checkArgument(maxRowCountPerPartition > 0, "maxRowCountPerPartition must be > 0");
         requireNonNull(hashSymbol, "hashSymbol is null");
 
         this.source = source;
         this.specification = specification;
-        this.rowNumberSymbol = rowNumberSymbol;
+        this.symbol = symbol;
+        this.rankingFunction = rankingFunction;
         this.maxRowCountPerPartition = maxRowCountPerPartition;
         this.partial = partial;
         this.hashSymbol = hashSymbol;
@@ -78,7 +84,7 @@ public final class TopNRowNumberNode
     public List<Symbol> getOutputSymbols()
     {
         if (!partial) {
-            return ImmutableList.copyOf(concat(source.getOutputSymbols(), ImmutableList.of(rowNumberSymbol)));
+            return ImmutableList.copyOf(concat(source.getOutputSymbols(), ImmutableList.of(symbol)));
         }
         return ImmutableList.copyOf(source.getOutputSymbols());
     }
@@ -106,9 +112,9 @@ public final class TopNRowNumberNode
     }
 
     @JsonProperty
-    public Symbol getRowNumberSymbol()
+    public Symbol getSymbol()
     {
-        return rowNumberSymbol;
+        return symbol;
     }
 
     @JsonProperty
@@ -138,6 +144,6 @@ public final class TopNRowNumberNode
     @Override
     public PlanNode replaceChildren(List<PlanNode> newChildren)
     {
-        return new TopNRowNumberNode(getId(), Iterables.getOnlyElement(newChildren), specification, rowNumberSymbol, maxRowCountPerPartition, partial, hashSymbol);
+        return new TopNRowNumberNode(getId(), Iterables.getOnlyElement(newChildren), specification, symbol, rankingFunction, maxRowCountPerPartition, partial, hashSymbol);
     }
 }

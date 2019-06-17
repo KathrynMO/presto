@@ -109,6 +109,7 @@ public final class SystemSessionProperties
     public static final String USE_MARK_DISTINCT = "use_mark_distinct";
     public static final String PREFER_PARTIAL_AGGREGATION = "prefer_partial_aggregation";
     public static final String OPTIMIZE_TOP_N_ROW_NUMBER = "optimize_top_n_row_number";
+    public static final String OPTIMIZE_TOP_N_RANK = "optimize_top_n_rank";
     public static final String MAX_GROUPING_SETS = "max_grouping_sets";
     public static final String LEGACY_UNNEST = "legacy_unnest";
     public static final String STATISTICS_CPU_TIMER_ENABLED = "statistics_cpu_timer_enabled";
@@ -883,6 +884,11 @@ public final class SystemSessionProperties
     public static boolean isOptimizeTopNRowNumber(Session session)
     {
         return session.getSystemProperty(OPTIMIZE_TOP_N_ROW_NUMBER, Boolean.class);
+    }
+
+    public static boolean isOptimizeTopNRank(Session session)
+    {
+        return session.getSystemProperty(OPTIMIZE_TOP_N_RANK, Boolean.class);
     }
 
     public static boolean isDistributedSortEnabled(Session session)
