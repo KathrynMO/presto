@@ -50,7 +50,7 @@ import com.facebook.presto.sql.planner.plan.StatisticsWriterNode;
 import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
 import com.google.common.collect.ImmutableList;
@@ -456,7 +456,7 @@ public class AddLocalExchanges
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRowNumberNode node, StreamPreferredProperties parentPreferences)
+        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, StreamPreferredProperties parentPreferences)
         {
             StreamPreferredProperties requiredProperties = parentPreferences.withDefaultParallelism(session);
 

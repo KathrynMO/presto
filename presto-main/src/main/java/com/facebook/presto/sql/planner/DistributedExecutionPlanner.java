@@ -48,7 +48,7 @@ import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
@@ -266,7 +266,7 @@ public class DistributedExecutionPlanner
         }
 
         @Override
-        public Map<PlanNodeId, SplitSource> visitTopNRowNumber(TopNRowNumberNode node, Void context)
+        public Map<PlanNodeId, SplitSource> visitTopNRowNumber(TopNRankingNode node, Void context)
         {
             return node.getSource().accept(this, context);
         }

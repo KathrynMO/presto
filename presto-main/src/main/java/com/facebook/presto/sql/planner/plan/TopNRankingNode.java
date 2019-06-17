@@ -13,9 +13,7 @@
  */
 package com.facebook.presto.sql.planner.plan;
 
-import com.facebook.presto.operator.GroupedTopNBuilder;
 import com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction;
-import com.facebook.presto.operator.window.RankFunction;
 import com.facebook.presto.sql.planner.OrderingScheme;
 import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.plan.WindowNode.Specification;
@@ -34,7 +32,7 @@ import static com.google.common.collect.Iterables.concat;
 import static java.util.Objects.requireNonNull;
 
 @Immutable
-public final class TopNRowNumberNode
+public final class TopNRankingNode
         extends PlanNode
 {
     private final PlanNode source;
@@ -46,7 +44,7 @@ public final class TopNRowNumberNode
     private final Optional<Symbol> hashSymbol;
 
     @JsonCreator
-    public TopNRowNumberNode(
+    public TopNRankingNode(
             @JsonProperty("id") PlanNodeId id,
             @JsonProperty("source") PlanNode source,
             @JsonProperty("specification") Specification specification,
@@ -144,6 +142,6 @@ public final class TopNRowNumberNode
     @Override
     public PlanNode replaceChildren(List<PlanNode> newChildren)
     {
-        return new TopNRowNumberNode(getId(), Iterables.getOnlyElement(newChildren), specification, symbol, rankingFunction, maxRowCountPerPartition, partial, hashSymbol);
+        return new TopNRankingNode(getId(), Iterables.getOnlyElement(newChildren), specification, symbol, rankingFunction, maxRowCountPerPartition, partial, hashSymbol);
     }
 }

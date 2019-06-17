@@ -18,7 +18,7 @@ import com.facebook.presto.cost.StatsProvider;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.block.SortOrder;
 import com.facebook.presto.sql.planner.plan.PlanNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
 
 import java.util.List;
@@ -58,7 +58,7 @@ public class TopNRowNumberMatcher
     @Override
     public boolean shapeMatches(PlanNode node)
     {
-        return node instanceof TopNRowNumberNode;
+        return node instanceof TopNRankingNode;
     }
 
     @Override
@@ -66,12 +66,12 @@ public class TopNRowNumberMatcher
     {
         checkState(shapeMatches(node), "Plan testing framework error: shapeMatches returned false in detailMatches in %s", this.getClass().getName());
 
-        TopNRowNumberNode topNRowNumberNode = (TopNRowNumberNode) node;
+        TopNRankingNode topNRankingNode = (TopNRankingNode) node;
 
         if (!specification
                 .map(expectedSpecification ->
                         expectedSpecification.getExpectedValue(symbolAliases)
-                                .equals(topNRowNumberNode.getSpecification()))
+                                .equals(topNRankingNode.getSpecification()))
                 .orElse(true)) {
             return NO_MATCH;
         }
@@ -79,19 +79,19 @@ public class TopNRowNumberMatcher
         if (!rowNumberSymbol
                 .map(expectedRowNumberSymbol ->
                         expectedRowNumberSymbol.toSymbol(symbolAliases)
-                                .equals(topNRowNumberNode.getSymbol()))
+                                .equals(topNRankingNode.getSymbol()))
                 .orElse(true)) {
             return NO_MATCH;
         }
 
         if (!maxRowCountPerPartition
-                .map(expectedMaxRowCountPerPartition -> expectedMaxRowCountPerPartition.equals(topNRowNumberNode.getMaxRowCountPerPartition()))
+                .map(expectedMaxRowCountPerPartition -> expectedMaxRowCountPerPartition.equals(topNRankingNode.getMaxRowCountPerPartition()))
                 .orElse(true)) {
             return NO_MATCH;
         }
 
         if (!partial
-                .map(expectedPartial -> expectedPartial.equals(topNRowNumberNode.isPartial()))
+                .map(expectedPartial -> expectedPartial.equals(topNRankingNode.isPartial()))
                 .orElse(true)) {
             return NO_MATCH;
         }
@@ -100,7 +100,7 @@ public class TopNRowNumberMatcher
                 .map(expectedHashSymbol ->
                         expectedHashSymbol
                                 .map(symbolAlias -> symbolAlias.toSymbol(symbolAliases))
-                                .equals(topNRowNumberNode.getHashSymbol()))
+                                .equals(topNRankingNode.getHashSymbol()))
                 .orElse(true)) {
             return NO_MATCH;
         }
@@ -169,7 +169,7 @@ public class TopNRowNumberMatcher
 
         PlanMatchPattern build()
         {
-            return node(TopNRowNumberNode.class, source).with(
+            return node(TopNRankingNode.class, source).with(
                     new TopNRowNumberMatcher(
                             specification,
                             rowNumberSymbol,

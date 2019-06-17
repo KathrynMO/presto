@@ -174,7 +174,7 @@ public abstract class PlanVisitor<R, C>
         return visitPlan(node, context);
     }
 
-    public R visitTopNRowNumber(TopNRowNumberNode node, C context)
+    public R visitTopNRowNumber(TopNRankingNode node, C context)
     {
         return visitPlan(node, context);
     }

@@ -65,7 +65,7 @@ import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
@@ -308,7 +308,7 @@ public class PropertyDerivations
         }
 
         @Override
-        public ActualProperties visitTopNRowNumber(TopNRowNumberNode node, List<ActualProperties> inputProperties)
+        public ActualProperties visitTopNRowNumber(TopNRankingNode node, List<ActualProperties> inputProperties)
         {
             ActualProperties properties = Iterables.getOnlyElement(inputProperties);
 

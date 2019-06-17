@@ -16,7 +16,7 @@ package com.facebook.presto.sql.planner.optimizations;
 import com.facebook.presto.Session;
 import com.facebook.presto.sql.planner.assertions.BasePlanTest;
 import com.facebook.presto.sql.planner.plan.FilterNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
 import org.intellij.lang.annotations.Language;
 import org.testng.annotations.Test;
@@ -43,7 +43,7 @@ public class TestWindowFilterPushDown
                 true,
                 anyTree(
                         limit(10, anyTree(
-                                node(TopNRowNumberNode.class,
+                                node(TopNRankingNode.class,
                                         anyTree(
                                                 tableScan("lineitem")))))));
 
@@ -71,7 +71,7 @@ public class TestWindowFilterPushDown
                 true,
                 anyTree(
                         anyNot(FilterNode.class,
-                                node(TopNRowNumberNode.class,
+                                node(TopNRankingNode.class,
                                         anyTree(
                                                 tableScan("lineitem"))))));
 

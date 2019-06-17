@@ -59,7 +59,7 @@ import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
@@ -385,9 +385,9 @@ public class UnaliasSymbolReferences
         }
 
         @Override
-        public PlanNode visitTopNRowNumber(TopNRowNumberNode node, RewriteContext<Void> context)
+        public PlanNode visitTopNRowNumber(TopNRankingNode node, RewriteContext<Void> context)
         {
-            return new TopNRowNumberNode(
+            return new TopNRankingNode(
                     node.getId(),
                     context.rewrite(node.getSource()),
                     canonicalizeAndDistinct(node.getSpecification()),

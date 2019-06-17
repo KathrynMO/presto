@@ -59,7 +59,7 @@ import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
@@ -356,7 +356,7 @@ public class AddExchanges
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRowNumberNode node, PreferredProperties preferredProperties)
+        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, PreferredProperties preferredProperties)
         {
             PreferredProperties preferredChildProperties;
             Function<PlanNode, PlanNode> addExchange;
@@ -376,7 +376,7 @@ public class AddExchanges
                     && !child.getProperties().isNodePartitionedOn(node.getPartitionBy())) {
                 // add exchange + push function to child
                 child = withDerivedProperties(
-                        new TopNRowNumberNode(
+                        new TopNRankingNode(
                                 idAllocator.getNextId(),
                                 child.getNode(),
                                 node.getSpecification(),

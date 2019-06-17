@@ -42,7 +42,7 @@ import com.facebook.presto.sql.planner.plan.ProjectNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SemiJoinNode;
 import com.facebook.presto.sql.planner.plan.SpatialJoinNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
@@ -271,7 +271,7 @@ public class HashGenerationOptimizer
         }
 
         @Override
-        public PlanWithProperties visitTopNRowNumber(TopNRowNumberNode node, HashComputationSet parentPreference)
+        public PlanWithProperties visitTopNRowNumber(TopNRankingNode node, HashComputationSet parentPreference)
         {
             if (node.getPartitionBy().isEmpty()) {
                 return planSimpleNodeWithProperties(node, parentPreference);
@@ -286,7 +286,7 @@ public class HashGenerationOptimizer
             Symbol hashSymbol = child.getRequiredHashSymbol(hashComputation.get());
 
             return new PlanWithProperties(
-                    new TopNRowNumberNode(
+                    new TopNRankingNode(
                             node.getId(),
                             child.getNode(),
                             node.getSpecification(),

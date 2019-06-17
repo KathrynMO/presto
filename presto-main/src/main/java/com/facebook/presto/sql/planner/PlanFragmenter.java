@@ -46,7 +46,7 @@ import com.facebook.presto.sql.planner.plan.StatisticsWriterNode;
 import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
 import com.google.common.collect.ImmutableList;
@@ -630,7 +630,7 @@ public class PlanFragmenter
         }
 
         @Override
-        public GroupedExecutionProperties visitTopNRowNumber(TopNRowNumberNode node, Void context)
+        public GroupedExecutionProperties visitTopNRowNumber(TopNRankingNode node, Void context)
         {
             return processWindowFunction(node);
         }

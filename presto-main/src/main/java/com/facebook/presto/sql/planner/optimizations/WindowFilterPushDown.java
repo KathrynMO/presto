@@ -35,7 +35,7 @@ import com.facebook.presto.sql.planner.plan.LimitNode;
 import com.facebook.presto.sql.planner.plan.PlanNode;
 import com.facebook.presto.sql.planner.plan.RowNumberNode;
 import com.facebook.presto.sql.planner.plan.SimplePlanRewriter;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.WindowNode;
 import com.facebook.presto.sql.tree.BooleanLiteral;
 import com.facebook.presto.sql.tree.Expression;
@@ -146,17 +146,17 @@ public class WindowFilterPushDown
                 WindowNode windowNode = (WindowNode) source;
                 // verify that unordered row_number window functions are replaced by RowNumberNode
                 verify(windowNode.getOrderingScheme().isPresent());
-                TopNRowNumberNode topNRowNumberNode = convertToTopNRanking(windowNode, limit, ROW_NUMBER);
+                TopNRankingNode topNRankingNode = convertToTopNRanking(windowNode, limit, ROW_NUMBER);
                 if (windowNode.getPartitionBy().isEmpty()) {
-                    return topNRowNumberNode;
+                    return topNRankingNode;
                 }
-                source = topNRowNumberNode;
+                source = topNRankingNode;
             }
             else if (source instanceof WindowNode && canOptimizeRank((WindowNode) source) && isOptimizeTopNRank(session)) {
                 WindowNode windowNode = (WindowNode) source;
                 // verify that unordered row_number window functions are replaced by RowNumberNode
 //                verify(windowNode.getOrderingScheme().isPresent());
-                TopNRowNumberNode topNRankNode = convertToTopNRanking(windowNode, limit, RANK);
+                TopNRankingNode topNRankNode = convertToTopNRanking(windowNode, limit, RANK);
                 if (windowNode.getPartitionBy().isEmpty()) {
                     return topNRankNode;
                 }
@@ -280,9 +280,9 @@ public class WindowFilterPushDown
             return new RowNumberNode(node.getId(), node.getSource(), node.getPartitionBy(), node.getRowNumberSymbol(), Optional.of(newRowCountPerPartition), node.getHashSymbol());
         }
 
-        private TopNRowNumberNode convertToTopNRanking(WindowNode windowNode, int limit, RankingFunction rankingFunction)
+        private TopNRankingNode convertToTopNRanking(WindowNode windowNode, int limit, RankingFunction rankingFunction)
         {
-            return new TopNRowNumberNode(idAllocator.getNextId(),
+            return new TopNRankingNode(idAllocator.getNextId(),
                     windowNode.getSource(),
                     windowNode.getSpecification(),
                     getOnlyElement(windowNode.getWindowFunctions().keySet()),

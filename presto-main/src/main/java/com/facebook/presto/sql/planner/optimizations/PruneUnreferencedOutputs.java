@@ -62,7 +62,7 @@ import com.facebook.presto.sql.planner.plan.TableFinishNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.planner.plan.TableWriterNode;
 import com.facebook.presto.sql.planner.plan.TopNNode;
-import com.facebook.presto.sql.planner.plan.TopNRowNumberNode;
+import com.facebook.presto.sql.planner.plan.TopNRankingNode;
 import com.facebook.presto.sql.planner.plan.UnionNode;
 import com.facebook.presto.sql.planner.plan.UnnestNode;
 import com.facebook.presto.sql.planner.plan.ValuesNode;
@@ -645,7 +645,7 @@ public class PruneUnreferencedOutputs
         }
 
         @Override
-        public PlanNode visitTopNRowNumber(TopNRowNumberNode node, RewriteContext<Set<Symbol>> context)
+        public PlanNode visitTopNRowNumber(TopNRankingNode node, RewriteContext<Set<Symbol>> context)
         {
             ImmutableSet.Builder<Symbol> expectedInputs = ImmutableSet.<Symbol>builder()
                     .addAll(context.get())
@@ -657,7 +657,7 @@ public class PruneUnreferencedOutputs
             }
             PlanNode source = context.rewrite(node.getSource(), expectedInputs.build());
 
-            return new TopNRowNumberNode(node.getId(),
+            return new TopNRankingNode(node.getId(),
                     source,
                     node.getSpecification(),
                     node.getSymbol(),
