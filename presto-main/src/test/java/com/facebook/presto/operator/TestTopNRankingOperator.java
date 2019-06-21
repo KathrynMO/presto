@@ -41,7 +41,7 @@ import static com.facebook.presto.operator.GroupByHashYieldAssertion.finishOpera
 import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.RANK;
 import static com.facebook.presto.operator.GroupedTopNBuilder.RankingFunction.ROW_NUMBER;
 import static com.facebook.presto.operator.OperatorAssertion.assertOperatorEquals;
-import static com.facebook.presto.operator.TopNRowNumberOperator.TopNRowNumberOperatorFactory;
+import static com.facebook.presto.operator.TopNRankingOperator.TopNRankingOperatorFactory;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
 import static com.facebook.presto.testing.MaterializedResult.resultBuilder;
@@ -53,7 +53,7 @@ import static java.util.concurrent.Executors.newScheduledThreadPool;
 import static org.testng.Assert.assertEquals;
 
 @Test(singleThreaded = true)
-public class TestTopNRowNumberOperator
+public class TestTopNRankingOperator
 {
     private ExecutorService executor;
     private ScheduledExecutorService scheduledExecutor;
@@ -110,7 +110,7 @@ public class TestTopNRowNumberOperator
                 .row(2L, 0.9)
                 .build();
 
-        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+        TopNRankingOperator.TopNRankingOperatorFactory operatorFactory = new TopNRankingOperator.TopNRankingOperatorFactory(
                 0,
                 new PlanNodeId("test"),
                 ROW_NUMBER,
@@ -160,7 +160,7 @@ public class TestTopNRowNumberOperator
                 .row(2L, 0.7)
                 .build();
 
-        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+        TopNRankingOperatorFactory operatorFactory = new TopNRankingOperatorFactory(
                 0,
                 new PlanNodeId("test"),
                 RANK,
@@ -210,7 +210,7 @@ public class TestTopNRowNumberOperator
                 .row(2L, 0.9)
                 .build();
 
-        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+        TopNRankingOperator.TopNRankingOperatorFactory operatorFactory = new TopNRankingOperatorFactory(
                 0,
                 new PlanNodeId("test"),
                 ROW_NUMBER,
@@ -264,7 +264,7 @@ public class TestTopNRowNumberOperator
                 .row(2L, 0.7)
                 .build();
 
-        TopNRowNumberOperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+        TopNRankingOperator.TopNRankingOperatorFactory operatorFactory = new TopNRankingOperator.TopNRankingOperatorFactory(
                 0,
                 new PlanNodeId("test"),
                 RANK,
@@ -308,7 +308,7 @@ public class TestTopNRowNumberOperator
         Type type = BIGINT;
         List<Page> input = createPagesWithDistinctHashKeys(type, 6_000, 600);
 
-        OperatorFactory operatorFactory = new TopNRowNumberOperatorFactory(
+        OperatorFactory operatorFactory = new TopNRankingOperatorFactory(
                 0,
                 new PlanNodeId("test"),
                 ROW_NUMBER,
@@ -329,7 +329,7 @@ public class TestTopNRowNumberOperator
                 input,
                 type,
                 operatorFactory,
-                operator -> ((TopNRowNumberOperator) operator).getCapacity(),
+                operator -> ((TopNRankingOperator) operator).getCapacity(),
                 1_000_000);
         assertGreaterThan(result.getYieldCount(), 3);
         assertGreaterThan(result.getMaxReservedBytes(), 5L << 20);

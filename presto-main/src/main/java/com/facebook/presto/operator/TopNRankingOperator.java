@@ -36,10 +36,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static java.util.Objects.requireNonNull;
 
-public class TopNRowNumberOperator
+public class TopNRankingOperator
         implements Operator
 {
-    public static class TopNRowNumberOperatorFactory
+    public static class TopNRankingOperatorFactory
             implements OperatorFactory
     {
         private final int operatorId;
@@ -62,7 +62,7 @@ public class TopNRowNumberOperator
         private boolean closed;
         private final JoinCompiler joinCompiler;
 
-        public TopNRowNumberOperatorFactory(
+        public TopNRankingOperatorFactory(
                 int operatorId,
                 PlanNodeId planNodeId,
                 RankingFunction rankingFunction,
@@ -101,8 +101,8 @@ public class TopNRowNumberOperator
         public Operator createOperator(DriverContext driverContext)
         {
             checkState(!closed, "Factory is already closed");
-            OperatorContext operatorContext = driverContext.addOperatorContext(operatorId, planNodeId, TopNRowNumberOperator.class.getSimpleName());
-            return new TopNRowNumberOperator(
+            OperatorContext operatorContext = driverContext.addOperatorContext(operatorId, planNodeId, TopNRankingOperator.class.getSimpleName());
+            return new TopNRankingOperator(
                     rankingFunction,
                     operatorContext,
                     sourceTypes,
@@ -127,7 +127,7 @@ public class TopNRowNumberOperator
         @Override
         public OperatorFactory duplicate()
         {
-            return new TopNRowNumberOperatorFactory(operatorId, planNodeId, rankingFunction, sourceTypes, outputChannels, partitionChannels, partitionTypes, sortChannels, sortOrder, maxRowCountPerPartition, partial, hashChannel, expectedPositions, joinCompiler);
+            return new TopNRankingOperatorFactory(operatorId, planNodeId, rankingFunction, sourceTypes, outputChannels, partitionChannels, partitionTypes, sortChannels, sortOrder, maxRowCountPerPartition, partial, hashChannel, expectedPositions, joinCompiler);
         }
     }
 
@@ -143,7 +143,7 @@ public class TopNRowNumberOperator
     private Work<?> unfinishedWork;
     private Iterator<Page> outputIterator;
 
-    public TopNRowNumberOperator(
+    public TopNRankingOperator(
             RankingFunction rankingFunction,
             OperatorContext operatorContext,
             List<? extends Type> sourceTypes,

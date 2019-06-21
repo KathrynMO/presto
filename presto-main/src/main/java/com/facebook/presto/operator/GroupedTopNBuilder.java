@@ -208,6 +208,7 @@ public class GroupedTopNBuilder
                     }
                     break;
                 case RANK:
+                    rankToRows.ensureCapacity(groupId + 1);
                     TreeMap<Row, List<Row>> map = rankToRows.get(groupId);
                     if (map == null) {
                         map = new TreeMap<>(Ordering.from(comparator).reversed());
@@ -230,7 +231,8 @@ public class GroupedTopNBuilder
                             PageReference previousPageReference = pageReferences.get(previousRow.getPageId());
                             previousPageReference.dereference(previousRow.getPosition());
                             for (Row r : map.get(previousRow)) {
-                                previousPageReference.dereference(r.getPosition());
+                                PageReference tempPageReference = pageReferences.get(r.getPageId());
+                                tempPageReference.dereference(r.getPosition());
                             }
                             map.remove(previousRow);
                             rows.enqueue(row);
