@@ -595,10 +595,10 @@ public class PlanPrinter
             args.add(format("order by (%s)", Joiner.on(", ").join(orderBy)));
 
             NodeRepresentation nodeOutput = addNode(node,
-                    "TopNRowNumber",
+                    "TopNRanking",
                     format("[%s limit %s]%s", Joiner.on(", ").join(args), node.getMaxRowCountPerPartition(), formatHash(node.getHashSymbol())));
 
-            nodeOutput.appendDetailsLine("%s := %s", node.getSymbol(), "row_number()");
+            nodeOutput.appendDetailsLine("%s := %s", node.getSymbol(), node.getRankingFunction());
 
             return processChildren(node, context);
         }
