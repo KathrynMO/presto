@@ -16,7 +16,9 @@ package com.facebook.presto.rta;
 import com.facebook.presto.rta.schema.RTADeployment;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.base.Splitter;
 
+import java.util.List;
 import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
@@ -61,6 +63,12 @@ public class RtaStorageKey
         }
         RtaStorageKey that = (RtaStorageKey) o;
         return Objects.equals(environment, that.environment) && type == that.type;
+    }
+
+    public String getDataCenter()
+    {
+        List<String> strings = Splitter.on("-").omitEmptyStrings().trimResults().limit(2).splitToList(environment);
+        return strings.get(0);
     }
 
     @Override

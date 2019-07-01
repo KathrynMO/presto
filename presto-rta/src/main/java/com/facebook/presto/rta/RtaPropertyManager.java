@@ -20,7 +20,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.json.JsonCodec;
@@ -123,6 +125,11 @@ public class RtaPropertyManager
         {
             return dcName;
         }
+
+        public String getFullDcNameWithNumber()
+        {
+            return String.format("%s%d", dcName, dcNumber);
+        }
     }
 
     public static class PerEnvironmentSpec
@@ -209,7 +216,7 @@ public class RtaPropertyManager
             return types;
         }
 
-        public Map<RtaStorageKey, Map<String, String>> build()
+        public Map<RtaStorageKey, Map<String, String>> build(Optional<DataCenterSpec> dataCenter)
                 throws IOException
         {
             ImmutableMap.Builder<RtaStorageKey, Map<String, String>> ret = ImmutableMap.builder();
@@ -221,9 +228,19 @@ public class RtaPropertyManager
                 RtaStorageType rtaType = RtaStorageType.valueOf(typeStr.toUpperCase(ENGLISH));
                 for (Map.Entry<String, PerEnvironmentSpec> env : spec.getEnvironments().entrySet()) {
                     String environment = env.getKey();
+                    RtaStorageKey rtaStorageKey = new RtaStorageKey(environment, rtaType);
                     PerEnvironmentSpec perEnvironmentSpec = env.getValue();
                     Map<String, String> configsForEnvironment = new HashMap<>(configsForType);
-                    ret.put(new RtaStorageKey(environment, rtaType), ImmutableMap.copyOf(perEnvironmentSpec.getResolvedConfigs(configsForEnvironment)));
+                    HashMap<String, String> configsBuilder = new HashMap<>(perEnvironmentSpec.getResolvedConfigs(configsForEnvironment));
+                    if (dataCenter.isPresent() && !rtaStorageKey.getDataCenter().equalsIgnoreCase(dataCenter.get().getFullDcNameWithNumber())) {
+                        configsBuilder.compute("extra-http-headers", (ignored, existingHeaders) -> {
+                            HashMap<String, String> existingHeadersParsed = new HashMap<>(existingHeaders == null ? ImmutableMap.of() : Splitter.on(",").trimResults().omitEmptyStrings().withKeyValueSeparator(":").split(existingHeaders));
+                            existingHeadersParsed.put("Rpc-Routing-Zone", rtaStorageKey.getDataCenter());
+                            existingHeadersParsed.put("Rpc-Routing-Delegate", "crosszone");
+                            return Joiner.on(",").withKeyValueSeparator(":").join(existingHeadersParsed);
+                        });
+                    }
+                    ret.put(rtaStorageKey, ImmutableMap.copyOf(configsBuilder));
                 }
             }
             return ret.build();
@@ -267,7 +284,7 @@ public class RtaPropertyManager
         else {
             propertySpec = new PropertySpec(ImmutableMap.of(), ImmutableMap.of());
         }
-        properties.set(propertySpec.build());
+        properties.set(propertySpec.build(dataCenter));
     }
 
     private static Optional<String> getUberDataCenterName(RtaConfig config)

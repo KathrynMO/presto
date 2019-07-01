@@ -33,6 +33,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -159,10 +160,13 @@ public class AresDbConnection
 
         requestBuilder = requestBuilder.setBodyGenerator(createStaticBodyGenerator(payload, StandardCharsets.UTF_8));
 
-        Request request = requestBuilder.setHeader(HttpHeaders.CONTENT_TYPE, "application/json")
+        requestBuilder.setHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                 .setHeader(aresDbConfig.getCallerHeaderParam(), aresDbConfig.getCallerHeaderValue())
-                .setHeader(aresDbConfig.getServiceHeaderParam(), aresDbConfig.getServiceName())
-                .build();
+                .setHeader(aresDbConfig.getServiceHeaderParam(), aresDbConfig.getServiceName());
+        for (Map.Entry<String, String> entry : aresDbConfig.getExtraHttpHeaders().entrySet()) {
+            requestBuilder.setHeader(entry.getKey(), entry.getValue());
+        }
+        Request request = requestBuilder.build();
 
         StringResponse stringResponse = httpClient.execute(request, createStringResponseHandler());
 

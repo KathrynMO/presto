@@ -12,19 +12,16 @@
            "environments" : {
                "phx2-staginga" : {
                    "config" : {
-                       "extra-http-headers" : "Rpc-Routing-Zone:phx3,Rpc-Routing-Delegate:crosszone",
                        "service-name" : "gforcedb-staginga"
                    }
                },
                "phx2-stagingb" : {
                    "config" : {
-                       "extra-http-headers" : "Rpc-Routing-Zone:phx3,Rpc-Routing-Delegate:crosszone",
                        "service-name" : "gforcedb-stagingb"
                    }
                },
                "phx2-prodi" : {
                    "config" : {
-                       "extra-http-headers" : "Rpc-Routing-Zone:phx3,Rpc-Routing-Delegate:crosszone",
                        "service-name" : "gforcedb-prodi"
                    }
                },
@@ -35,7 +32,6 @@
                },
                "phx2-prodh" : {
                    "config" : {
-                       "extra-http-headers" : "Rpc-Routing-Zone:phx3,Rpc-Routing-Delegate:crosszone",
                        "service-name" : "gforcedb-prodh"
                    }
                },
@@ -44,9 +40,13 @@
                        "service-name" : "gforcedb-prodh"
                    }
                },
+               "phx2-prodj" : {
+                   "config" : {
+                       "service-name" : "gforcedb-prodj"
+                   }
+               },
                "dca1-prodj" : {
                    "config" : {
-                       "extra-http-headers" : "Rpc-Routing-Zone:dca1,Rpc-Routing-Delegate:crosszone",
                        "service-name" : "gforcedb-prodj"
                    }
                }
