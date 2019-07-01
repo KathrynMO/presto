@@ -30,7 +30,7 @@ public class AresDbTableHandle
     private final AresDbConnectorId connectorId;
     private final String tableName;
     private final Optional<String> timeColumnName;
-    private final Optional<Type> timeColumnType;
+    private final Optional<Type> timeStampType;
     private final Optional<Duration> retention;
 
     @JsonCreator
@@ -38,13 +38,13 @@ public class AresDbTableHandle
             @JsonProperty("connectorId") AresDbConnectorId connectorId,
             @JsonProperty("tableName") String tableName,
             @JsonProperty("timeColumnName") Optional<String> timeColumnName,
-            @JsonProperty("timeColumnType") Optional<Type> timeColumnType,
+            @JsonProperty("timeStampType") Optional<Type> timeStampType,
             @JsonProperty("retention") Optional<Duration> retention)
     {
         this.connectorId = connectorId;
         this.tableName = tableName;
         this.timeColumnName = timeColumnName;
-        this.timeColumnType = timeColumnType;
+        this.timeStampType = timeStampType;
         this.retention = retention;
     }
 
@@ -55,7 +55,7 @@ public class AresDbTableHandle
                 .add("connectorId", connectorId)
                 .add("tableName", tableName)
                 .add("timeColumnName", timeColumnName)
-                .add("timeColumnType", timeColumnType)
+                .add("timeStampType", timeStampType)
                 .add("retention", retention)
                 .toString();
     }
@@ -85,9 +85,9 @@ public class AresDbTableHandle
     }
 
     @JsonProperty
-    public Optional<Type> getTimeColumnType()
+    public Optional<Type> getTimeStampType()
     {
-        return timeColumnType;
+        return timeStampType;
     }
 
     @Override
@@ -105,13 +105,13 @@ public class AresDbTableHandle
         return Objects.equals(connectorId, that.connectorId) &&
                 Objects.equals(tableName, that.tableName) &&
                 Objects.equals(timeColumnName, that.timeColumnName) &&
-                Objects.equals(timeColumnType, that.timeColumnType) &&
+                Objects.equals(timeStampType, that.timeStampType) &&
                 Objects.equals(retention, that.retention);
     }
 
     @Override
     public int hashCode()
     {
-        return Objects.hash(connectorId, tableName, timeColumnName, timeColumnType, retention);
+        return Objects.hash(connectorId, tableName, timeColumnName, timeStampType, retention);
     }
 }

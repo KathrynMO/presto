@@ -62,7 +62,7 @@ import static java.util.Objects.requireNonNull;
 public class AresDbMetadata
         implements ConnectorMetadata
 {
-    private static final Logger log = Logger.get(ConnectorMetadata.class);
+    private static final Logger log = Logger.get(AresDbMetadata.class);
 
     private final AresDbConnectorId connectorId;
     private final AresDbConnection aresDbConnection;
@@ -76,7 +76,7 @@ public class AresDbMetadata
         this.aresDbConfig = requireNonNull(aresDbConfig, "aresDbConfig is null");
     }
 
-    private Optional<TableScanPipeline> tryCreatingNewPipeline(Supplier<Boolean> enabled, TableScanPipeline scanPipeline, PipelineNode newPipelineNode)
+    private Optional<TableScanPipeline> tryCreatingNewPipeline(Supplier<Boolean> enabled, TableScanPipeline scanPipeline, PipelineNode newPipelineNode, ConnectorSession session)
     {
         if (!enabled.get()) {
             return Optional.empty();
@@ -85,7 +85,7 @@ public class AresDbMetadata
         try {
             TableScanPipeline newPipeline = new TableScanPipeline(new ArrayList<>(scanPipeline.getPipelineNodes()), scanPipeline.getOutputColumnHandles());
             newPipeline.addPipeline(newPipelineNode, createDerivedColumnHandles(newPipelineNode));
-            AresDbQueryGenerator.generate(newPipeline, Optional.empty(), Optional.of(aresDbConfig), Optional.empty());
+            AresDbQueryGenerator.generate(newPipeline, Optional.of(aresDbConfig), Optional.of(session));
             return Optional.of(newPipeline);
         }
         catch (Exception e) {
@@ -226,25 +226,25 @@ public class AresDbMetadata
     @Override
     public Optional<TableScanPipeline> pushAggregationIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle, TableScanPipeline currentPipeline, AggregationPipelineNode aggregation)
     {
-        return tryCreatingNewPipeline(aresDbConfig::isAggregationPushDownEnabled, currentPipeline, aggregation);
+        return tryCreatingNewPipeline(aresDbConfig::isAggregationPushDownEnabled, currentPipeline, aggregation, session);
     }
 
     @Override
     public Optional<TableScanPipeline> pushProjectIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle, TableScanPipeline currentPipeline, ProjectPipelineNode project)
     {
-        return tryCreatingNewPipeline(aresDbConfig::isProjectPushDownEnabled, currentPipeline, project);
+        return tryCreatingNewPipeline(aresDbConfig::isProjectPushDownEnabled, currentPipeline, project, session);
     }
 
     @Override
     public Optional<TableScanPipeline> pushFilterIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle, TableScanPipeline currentPipeline, FilterPipelineNode filter)
     {
-        return tryCreatingNewPipeline(aresDbConfig::isFilterPushDownEnabled, currentPipeline, filter);
+        return tryCreatingNewPipeline(aresDbConfig::isFilterPushDownEnabled, currentPipeline, filter, session);
     }
 
     @Override
     public Optional<TableScanPipeline> pushLimitIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle, TableScanPipeline currentPipeline, LimitPipelineNode limit)
     {
-        return tryCreatingNewPipeline(aresDbConfig::isLimitPushDownEnabled, currentPipeline, limit);
+        return tryCreatingNewPipeline(aresDbConfig::isLimitPushDownEnabled, currentPipeline, limit, session);
     }
 
     @Override
@@ -257,8 +257,8 @@ public class AresDbMetadata
     }
 
     @Override
-    public Optional<TableScanPipeline> pushRightJoinIntoScan(ConnectorSession connectorSession, ConnectorTableHandle connectorHandle, TableScanPipeline currentPipeline, JoinPipelineNode join)
+    public Optional<TableScanPipeline> pushRightJoinIntoScan(ConnectorSession session, ConnectorTableHandle connectorHandle, TableScanPipeline currentPipeline, JoinPipelineNode join)
     {
-        return tryCreatingNewPipeline(aresDbConfig::isJoinPushDownEnabled, currentPipeline, join);
+        return tryCreatingNewPipeline(aresDbConfig::isJoinPushDownEnabled, currentPipeline, join, session);
     }
 }

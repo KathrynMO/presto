@@ -33,6 +33,7 @@ import com.facebook.presto.spi.pipeline.FilterPipelineNode;
 import com.facebook.presto.spi.pipeline.LimitPipelineNode;
 import com.facebook.presto.spi.pipeline.PipelineNode;
 import com.facebook.presto.spi.pipeline.ProjectPipelineNode;
+import com.facebook.presto.spi.pipeline.ScanParallelismFinder;
 import com.facebook.presto.spi.pipeline.TablePipelineNode;
 import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.facebook.presto.spi.predicate.TupleDomain;
@@ -282,7 +283,7 @@ public class PinotMetadata
     @Override
     public Optional<TableScanPipeline> pushLimitIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle, TableScanPipeline currentPipeline, LimitPipelineNode limit)
     {
-        if (!limit.isPartial() && PinotScanParallelismFinder.canParallelize(PinotSessionProperties.isScanParallelismEnabled(session), currentPipeline)) {
+        if (!limit.isPartial() && ScanParallelismFinder.canParallelize(PinotSessionProperties.isScanParallelismEnabled(session), currentPipeline)) {
             return Optional.empty();
         }
         else {

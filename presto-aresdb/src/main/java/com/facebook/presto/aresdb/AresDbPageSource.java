@@ -16,9 +16,9 @@ package com.facebook.presto.aresdb;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.facebook.presto.aresdb.query.AresDbQueryGenerator;
+import com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext;
 import com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.AresDbOutputInfo;
-import com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.AugmentedAQL;
+import com.facebook.presto.aresdb.query.AugmentedAQL;
 import com.facebook.presto.spi.ConnectorPageSource;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.Page;
@@ -35,6 +35,7 @@ import com.facebook.presto.spi.type.TinyintType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
 import com.google.common.collect.ImmutableList;
+import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
 import io.airlift.slice.Slices;
 
@@ -50,6 +51,8 @@ import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_OUTP
 public class AresDbPageSource
         implements ConnectorPageSource
 {
+    private static final Logger log = Logger.get(AresDbPageSource.class);
+
     private final AresDbSplit aresDbSplit;
     private final List<AresDbColumnHandle> columns;
     private final AresDbConnection aresDbConnection;
@@ -197,19 +200,19 @@ public class AresDbPageSource
 
         long start = System.nanoTime();
         try {
-            AugmentedAQL aql = AresDbQueryGenerator.generate(aresDbSplit.getPipeline(), Optional.of(columns), Optional.of(aresDbConfig), Optional.of(session));
-
+            AugmentedAQL aql = aresDbSplit.getAugmentedAql();
             List<Type> expectedTypes = columns.stream().map(AresDbColumnHandle::getDataType).collect(Collectors.toList());
             PageBuilder pageBuilder = new PageBuilder(expectedTypes);
+            List<AresDbOutputInfo> indicesMappingFromAresDbSchemaToPrestoSchema = AresDbQueryGeneratorContext.getIndicesMappingFromAresDbSchemaToPrestoSchema(aql.getExpressions(), columns);
             ImmutableList.Builder<BlockBuilder> columnBlockBuilders = ImmutableList.builder();
             ImmutableList.Builder<Type> columnTypes = ImmutableList.builder();
-            for (AresDbOutputInfo outputInfo : aql.getOutputInfo().get()) {
+            for (AresDbOutputInfo outputInfo : indicesMappingFromAresDbSchemaToPrestoSchema) {
                 BlockBuilder blockBuilder = pageBuilder.getBlockBuilder(outputInfo.index);
                 columnBlockBuilders.add(blockBuilder);
                 columnTypes.add(expectedTypes.get(outputInfo.index));
             }
 
-            int counter = issueAqlAndPopulate(aql, columnBlockBuilders.build(), columnTypes.build());
+            int counter = issueAqlAndPopulate(aql, columnBlockBuilders.build(), columnTypes.build(), indicesMappingFromAresDbSchemaToPrestoSchema);
             pageBuilder.declarePositions(counter);
             return pageBuilder.build();
         }
@@ -219,9 +222,8 @@ public class AresDbPageSource
         }
     }
 
-    private int issueAqlAndPopulate(AugmentedAQL aresQL, List<BlockBuilder> blockBuilders, List<Type> types)
+    private int issueAqlAndPopulate(AugmentedAQL aresQL, List<BlockBuilder> blockBuilders, List<Type> types, List<AresDbOutputInfo> outputInfos)
     {
-        List<AresDbOutputInfo> outputInfos = aresQL.getOutputInfo().get();
         String response = aresDbConnection.queryAndGetResults(aresQL.getAql());
 
         JSONObject responseJson = JSONObject.parseObject(response);

@@ -52,6 +52,7 @@ public class AresDbModule
         binder.bind(AresDbConnection.class).in(Scopes.SINGLETON);
         binder.bind(AresDbNodePartitioningProvider.class).in(Scopes.SINGLETON);
         binder.bind(ConnectorNodePartitioningProvider.class).to(AresDbNodePartitioningProvider.class).in(Scopes.SINGLETON);
+        binder.bind(AresDbSessionProperties.class).in(Scopes.SINGLETON);
 
         httpClientBinder(binder).bindHttpClient("aresDb", ForAresDb.class)
                 .withConfigDefaults(cfg -> defaultHttpConfigs(cfg));

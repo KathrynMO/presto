@@ -16,7 +16,7 @@ package com.facebook.presto.aresdb;
 import com.alibaba.fastjson.JSONObject;
 import com.facebook.presto.Session;
 import com.facebook.presto.aresdb.query.AresDbQueryGenerator;
-import com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext;
+import com.facebook.presto.aresdb.query.AugmentedAQL;
 import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.metadata.MetadataManager;
 import com.facebook.presto.spi.ColumnHandle;
@@ -74,7 +74,7 @@ import static org.testng.Assert.assertEquals;
 public class TestAresDbQueryGenerator
 {
     // Test table and related info
-    private static AresDbTableHandle aresdbTable = new AresDbTableHandle(new AresDbConnectorId("connId"), "tbl", Optional.of("secondsSinceEpoch"), Optional.of(BIGINT), Optional.of(new Duration(2, TimeUnit.DAYS)));
+    private static AresDbTableHandle aresdbTable = new AresDbTableHandle(new AresDbConnectorId("connId"), "tbl", Optional.of("secondsSinceEpoch"), Optional.of(BIGINT), Optional.empty());
     private static AresDbTableHandle joinTable = new AresDbTableHandle(new AresDbConnectorId("connId"), "dim", Optional.empty(), Optional.empty(), Optional.empty());
     private static AresDbColumnHandle regionId = new AresDbColumnHandle("regionId", BIGINT, REGULAR);
     private static AresDbColumnHandle city = new AresDbColumnHandle("city", VARCHAR, REGULAR);
@@ -86,7 +86,7 @@ public class TestAresDbQueryGenerator
 
     private static void testAQL(TableScanPipeline scanPipeline, String expectedAQL, Optional<ConnectorSession> session)
     {
-        AresDbQueryGeneratorContext.AugmentedAQL augmentedAQL = AresDbQueryGenerator.generate(scanPipeline, Optional.empty(), Optional.empty(), session);
+        AugmentedAQL augmentedAQL = AresDbQueryGenerator.generate(scanPipeline, Optional.empty(), session);
         assertEquals(JSONObject.parse(augmentedAQL.getAql()), JSONObject.parse(expectedAQL), augmentedAQL.getAql());
     }
 
@@ -101,7 +101,7 @@ public class TestAresDbQueryGenerator
         checkArgument(!aggInputColumnName.equalsIgnoreCase("regionid") && !aggInputColumnName.equalsIgnoreCase("city"));
         AggregationPipelineNode.GroupByColumn groupByRegionId = new AggregationPipelineNode.GroupByColumn("regionid", "regionid", BIGINT);
         AggregationPipelineNode.GroupByColumn groupByCityId = new AggregationPipelineNode.GroupByColumn("city", "city", VARCHAR);
-        String expectedAggOutputFormat = "{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"table\":\"tbl\"}";
+        String expectedAggOutputFormat = "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"table\":\"tbl\"}]}";
         // `select agg from tbl group by regionId`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, aggInputColHandle)),
@@ -118,14 +118,14 @@ public class TestAresDbQueryGenerator
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, aggInputColHandle, city)),
                 agg(ImmutableList.of(groupByRegionId, aggregation, groupByCityId), false)),
-                format("{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"table\":\"tbl\"}", expectedAggOutput));
+                format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"table\":\"tbl\"}]}", expectedAggOutput));
 
         // `select regionid, agg, city from tbl group by regionId where regionid > 20`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, aggInputColHandle, city)),
                 filter(pdExpr("regionid > 20"), cols("regionid", aggInputColumnName, "city"), types(BIGINT, aggInputDataType, VARCHAR)),
                 agg(ImmutableList.of(groupByRegionId, aggregation, groupByCityId), false)),
-                format("{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}", expectedAggOutput));
+                format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}]}", expectedAggOutput));
 
         // `select regionid, agg, city from tbl group by regionId where secondssinceepoch between 200 and 300 and regionid >= 40`
         testAQL(pipeline(
@@ -133,7 +133,7 @@ public class TestAresDbQueryGenerator
                 filter(pdExpr("secondssinceepoch between 200 and 300 and regionid >= 40"), cols("regionid", "city", "secondssinceepoch", aggInputColumnName),
                         types(BIGINT, VARCHAR, BIGINT, aggInputDataType)),
                 agg(ImmutableList.of(groupByRegionId, aggregation, groupByCityId), false)),
-                format("{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 200) AND (secondsSinceEpoch <= 300)) AND (regionId >= 40))\"],\"table\":\"tbl\"}", expectedAggOutput));
+                format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"%s\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 200) AND (secondsSinceEpoch <= 300)) AND (regionId >= 40))\"],\"table\":\"tbl\"}]}", expectedAggOutput));
     }
 
     @Test
@@ -151,21 +151,21 @@ public class TestAresDbQueryGenerator
                 new JoinPipelineNode(Optional.empty(), cols("city", "fare", "zip"), ImmutableList.of(VARCHAR, DOUBLE, BIGINT), joinTable, Optional.of(joinPipeline), ImmutableList.of(new JoinPipelineNode.EquiJoinClause(new PushDownInputColumn(BIGINT.getTypeSignature(), "regionid"), new PushDownInputColumn(BIGINT.getTypeSignature(), "cityid"))), JoinPipelineNode.JoinType.INNER),
                 filter(pdExpr("zip != 94587"), cols("city", "fare"), ImmutableList.of(VARCHAR, DOUBLE)),
                 aggNode);
-        testAQL(leftPipeline, "{\"dimensions\":[{\"sqlExpression\":\"city\"}],\"joins\":[{\"alias\":\"dim\",\"conditions\":[\"regionId = dim.cityId\"],\"table\":\"dim\"}],\"measures\":[{\"sqlExpression\":\"avg(fare)\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 100) AND (secondsSinceEpoch <= 200)) OR ((((secondsSinceEpoch >= 175) AND (secondsSinceEpoch <= 275)) AND (fare > 10)) AND (city <> 'DEL')))\",\"((dim.population > 1000) AND ! (dim.cityId IN (1, 2, 3)))\",\"(dim.zip <> 94587)\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"275\"}}");
+        testAQL(leftPipeline, "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"}],\"joins\":[{\"alias\":\"dim\",\"conditions\":[\"regionId = dim.cityId\"],\"table\":\"dim\"}],\"measures\":[{\"sqlExpression\":\"avg(fare)\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 100) AND (secondsSinceEpoch <= 200)) OR ((((secondsSinceEpoch >= 175) AND (secondsSinceEpoch <= 275)) AND (fare > 10)) AND (city <> 'DEL')))\",\"((dim.population > 1000) AND ! (dim.cityId IN (1, 2, 3)))\",\"(dim.zip <> 94587)\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"275\"}}]}");
     }
 
     @Test
     public void testSimpleSelectStar()
     {
         testAQL(pipeline(scan(aresdbTable, columnHandles(regionId, city, fare, secondsSinceEpoch))),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"fare\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"fare\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}]}");
     }
 
     @Test
     public void testSimplePartialColumnSelection()
     {
         testAQL(pipeline(scan(aresdbTable, columnHandles(regionId, secondsSinceEpoch))),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}]}");
     }
 
     @Test
@@ -174,7 +174,7 @@ public class TestAresDbQueryGenerator
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, city, fare)),
                 limit(50, true, cols("regionid", "city", "fare"), types(BIGINT, VARCHAR, DOUBLE))),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"fare\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"fare\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"table\":\"tbl\"}]}");
     }
 
     @Test
@@ -184,7 +184,7 @@ public class TestAresDbQueryGenerator
                 scan(aresdbTable, columnHandles(city, secondsSinceEpoch)),
                 filter(pdExpr("secondssinceepoch > 20"), cols("city", "secondssinceepoch"), types(VARCHAR, BIGINT)),
                 filter(pdExpr("city < 200 AND city > 10"), cols("city", "secondssinceepoch"), types(VARCHAR, BIGINT))),
-                "{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\",\"((city < 200) AND (city > 10))\"],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\",\"((city < 200) AND (city > 10))\"],\"table\":\"tbl\"}]}");
     }
 
     @Test
@@ -193,7 +193,7 @@ public class TestAresDbQueryGenerator
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(city, secondsSinceEpoch)),
                 filter(pdExpr("secondssinceepoch > 20"), cols("city", "secondssinceepoch"), types(VARCHAR, BIGINT))),
-                "{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\"],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":-1,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\"],\"table\":\"tbl\"}]}");
     }
 
     @Test
@@ -203,7 +203,7 @@ public class TestAresDbQueryGenerator
                 scan(aresdbTable, columnHandles(city, secondsSinceEpoch)),
                 filter(pdExpr("secondssinceepoch > 20"), cols("city", "secondssinceepoch"), types(VARCHAR, BIGINT)),
                 limit(50, true, cols("city"), types(VARCHAR))),
-                "{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\"],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(secondsSinceEpoch > 20)\"],\"table\":\"tbl\"}]}");
     }
 
     private static FilterPipelineNode createFilterForExpression(List<ColumnHandle> incomingColumns, String expressionSql, List<String> cols)
@@ -235,16 +235,18 @@ public class TestAresDbQueryGenerator
     public void testTimeFilterDefaultRetentionBounds()
     {
         long currentTime = System.currentTimeMillis() + 100; // 100 to make sure it is not aligned to second boundary;
-        long retentionTime = currentTime - aresdbTable.getRetention().get().toMillis();
+        ConnectorSession session = new TestingConnectorSession("user", Optional.of("test"), Optional.empty(), UTC_KEY, ENGLISH, currentTime, ImmutableList.of(), ImmutableMap.of(), new FeaturesConfig().isLegacyTimestamp());
+        Duration retention = new Duration(2, TimeUnit.DAYS);
+        AresDbTableHandle tableWithRetention = new AresDbTableHandle(new AresDbConnectorId("connId"), "tbl", Optional.of("secondsSinceEpoch"), Optional.of(BIGINT), Optional.of(retention));
+        long retentionTime = currentTime - retention.toMillis();
         long highSecondsExpected = (currentTime + 999) / 1000;
         long lowSecondsExpected = retentionTime / 1000;
-        ConnectorSession session = new TestingConnectorSession("user", Optional.of("test"), Optional.empty(), UTC_KEY, ENGLISH, currentTime, ImmutableList.of(), ImmutableMap.of(), new FeaturesConfig().isLegacyTimestamp());
         List<ColumnHandle> columnHandles = columnHandles(city, regionId, secondsSinceEpoch);
         testAQL(pipeline(
-                scan(aresdbTable, columnHandles),
+                scan(tableWithRetention, columnHandles),
                 createFilterForExpression(columnHandles, "regionid in (3, 4)", cols("regionid", "city", "secondssinceepoch")),
                 limit(50, true, cols("city"), types(VARCHAR))),
-                String.format("{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"}}", lowSecondsExpected, highSecondsExpected), Optional.of(session));
+                String.format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"}}]}", lowSecondsExpected, highSecondsExpected), Optional.of(session));
     }
 
     @Test
@@ -255,7 +257,7 @@ public class TestAresDbQueryGenerator
                 scan(aresdbTable, columnHandles),
                 createFilterForExpression(columnHandles, "regionid in (3, 4) and (secondssinceepoch between 100 and 200) and (secondssinceepoch >= 150 or secondssinceepoch < 300)", cols("regionid", "city", "secondssinceepoch")),
                 limit(50, true, cols("city"), types(VARCHAR))),
-                "{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(((regionId IN (3, 4)) AND ((secondsSinceEpoch >= 100) AND (secondsSinceEpoch <= 200))) AND ((secondsSinceEpoch >= 150) OR (secondsSinceEpoch < 300)))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"200\"}}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(((regionId IN (3, 4)) AND ((secondsSinceEpoch >= 100) AND (secondsSinceEpoch <= 200))) AND ((secondsSinceEpoch >= 150) OR (secondsSinceEpoch < 300)))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"200\"}}]}");
     }
 
     @Test
@@ -269,33 +271,33 @@ public class TestAresDbQueryGenerator
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId)),
                 agg(ImmutableList.of(countStar, groupByRegionId), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}]}");
 
         // `select regionid, count(*) from tbl group by regionId`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId)),
                 agg(ImmutableList.of(groupByRegionId, countStar), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}]}");
 
         // `select regionid, count(*), city from tbl group by regionId`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, city)),
                 agg(ImmutableList.of(groupByRegionId, countStar, groupByCityId), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"table\":\"tbl\"}]}");
 
         // `select regionid, count(*), city from tbl group by regionId where regionid > 20`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, city)),
                 filter(pdExpr("regionid > 20"), cols("regionid", "city"), types(BIGINT, VARCHAR)),
                 agg(ImmutableList.of(groupByRegionId, countStar, groupByCityId), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}]}");
 
         // `select regionid, count(*), city from tbl group by regionId where secondssinceepoch between 200 and 300 and regionid >= 40`
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(regionId, city, secondsSinceEpoch)),
                 filter(pdExpr("secondssinceepoch between 200 and 300 and regionid >= 40"), cols("regionid", "city", "secondssinceepoch"), types(BIGINT, VARCHAR, BIGINT)),
                 agg(ImmutableList.of(groupByRegionId, countStar, groupByCityId), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 200) AND (secondsSinceEpoch <= 300)) AND (regionId >= 40))\"],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"count(*)\"}],\"rowFilters\":[\"(((secondsSinceEpoch >= 200) AND (secondsSinceEpoch <= 300)) AND (regionId >= 40))\"],\"table\":\"tbl\"}]}");
     }
 
     @Test
@@ -332,7 +334,7 @@ public class TestAresDbQueryGenerator
                 scan(aresdbTable, columnHandles(regionId, fare)),
                 project(ImmutableList.of(pdExpr("regionid"), pdExpr("fare")), cols("regionid", "fare"), types(BIGINT, DOUBLE)),
                 agg(ImmutableList.of(distinct, groupByRegionId), false)),
-                format("{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\"}"));
+                format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\"}]}"));
 
         // `select regionid, agg, city from tbl group by regionId where regionid > 20`
         testAQL(pipeline(
@@ -341,7 +343,7 @@ public class TestAresDbQueryGenerator
                 project(ImmutableList.of(pdExpr("regionid"), pdExpr("fare"), pdExpr("city")),
                         cols("regionid", "fare", "city"), types(BIGINT, DOUBLE, VARCHAR)),
                 agg(ImmutableList.of(groupByRegionId, distinct, groupByCityId), false)),
-                format("{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}"));
+                format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"rowFilters\":[\"(regionId > 20)\"],\"table\":\"tbl\"}]}"));
     }
 
     @Test
@@ -356,7 +358,7 @@ public class TestAresDbQueryGenerator
                 project(ImmutableList.of(pdExpr("city"), pdExpr("fare"), dateTrunc),
                         cols("city", "fare", "day"), types(VARCHAR, DOUBLE, BIGINT)),
                 agg(ImmutableList.of(approxDistinct, groupByDay, groupByCityId), false)),
-                "{\"dimensions\":[{\"sqlExpression\":\"secondsSinceEpoch - 50\",\"timeBucketizer\":\"day\",\"timeUnit\":\"second\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\"}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"secondsSinceEpoch - 50\",\"timeBucketizer\":\"day\",\"timeUnit\":\"second\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\"}]}");
     }
 
     @Test(expectedExceptions = AresDbException.class)

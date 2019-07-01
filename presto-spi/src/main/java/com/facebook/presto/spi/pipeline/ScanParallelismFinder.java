@@ -11,22 +11,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.pinot;
+package com.facebook.presto.spi.pipeline;
 
-import com.facebook.presto.spi.pipeline.AggregationPipelineNode;
-import com.facebook.presto.spi.pipeline.LimitPipelineNode;
-import com.facebook.presto.spi.pipeline.PipelineNode;
-import com.facebook.presto.spi.pipeline.SortPipelineNode;
-import com.facebook.presto.spi.pipeline.TableScanPipeline;
-import com.facebook.presto.spi.pipeline.TableScanPipelineVisitor;
-
-class PinotScanParallelismFinder
+public class ScanParallelismFinder
         extends TableScanPipelineVisitor<Boolean, Boolean>
 {
+    private ScanParallelismFinder()
+    {
+    }
+
     // go through the pipeline operations and see if we parallelize the scan
     public static boolean canParallelize(boolean canParallelize, TableScanPipeline scanPipeline)
     {
-        PinotScanParallelismFinder scanParallelismFinder = new PinotScanParallelismFinder();
+        ScanParallelismFinder scanParallelismFinder = new ScanParallelismFinder();
         for (PipelineNode pipelineNode : scanPipeline.getPipelineNodes()) {
             canParallelize = pipelineNode.accept(scanParallelismFinder, canParallelize);
         }
@@ -43,7 +40,7 @@ class PinotScanParallelismFinder
     @Override
     public Boolean visitAggregationNode(AggregationPipelineNode aggregation, Boolean canParallelize)
     {
-        return false;
+        return canParallelize && aggregation.isPartial();
     }
 
     @Override

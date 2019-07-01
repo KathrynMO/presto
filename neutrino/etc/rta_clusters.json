@@ -5,9 +5,7 @@
         "aresdb" : {
            "config" : {
                "service-url" : "localhost:5436",
-               "max-limit-without-aggregates" : 10000,
-               "metadata-service-name" : "unused",
-               "metadata-service-url" : "unused"
+               "max-limit-without-aggregates" : 10000
            },
            "environments" : {
                "phx2-staginga" : {

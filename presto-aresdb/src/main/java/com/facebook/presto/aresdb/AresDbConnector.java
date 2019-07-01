@@ -20,11 +20,15 @@ import com.facebook.presto.spi.connector.ConnectorNodePartitioningProvider;
 import com.facebook.presto.spi.connector.ConnectorPageSourceProvider;
 import com.facebook.presto.spi.connector.ConnectorSplitManager;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
+import com.facebook.presto.spi.session.PropertyMetadata;
 import com.facebook.presto.spi.transaction.IsolationLevel;
+import com.google.common.collect.ImmutableList;
 import io.airlift.bootstrap.LifeCycleManager;
 import io.airlift.log.Logger;
 
 import javax.inject.Inject;
+
+import java.util.List;
 
 import static java.util.Objects.requireNonNull;
 
@@ -38,15 +42,17 @@ public class AresDbConnector
     private final AresDbSplitManager splitManager;
     private final AresDbPageSourceProvider pageSourceProvider;
     private final AresDbNodePartitioningProvider partitioningProvider;
+    private final List<PropertyMetadata<?>> sessionProperties;
 
     @Inject
-    public AresDbConnector(LifeCycleManager lifeCycleManager, AresDbMetadata metadata, AresDbSplitManager splitManager, AresDbPageSourceProvider pageSourceProvider, AresDbNodePartitioningProvider partitioningProvider)
+    public AresDbConnector(LifeCycleManager lifeCycleManager, AresDbMetadata metadata, AresDbSplitManager splitManager, AresDbPageSourceProvider pageSourceProvider, AresDbNodePartitioningProvider partitioningProvider, AresDbSessionProperties sessionProperties)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.metadata = requireNonNull(metadata, "metadata is null");
         this.splitManager = requireNonNull(splitManager, "splitManager is null");
         this.pageSourceProvider = requireNonNull(pageSourceProvider, "pageSourceProvider is null");
         this.partitioningProvider = partitioningProvider;
+        this.sessionProperties = ImmutableList.copyOf(requireNonNull(sessionProperties, "sessionProperties is null").getSessionProperties());
     }
 
     @Override
@@ -88,6 +94,12 @@ public class AresDbConnector
         catch (Exception e) {
             log.error(e, "Error shutting down connector");
         }
+    }
+
+    @Override
+    public List<PropertyMetadata<?>> getSessionProperties()
+    {
+        return sessionProperties;
     }
 
     public enum AresDbTransactionHandle

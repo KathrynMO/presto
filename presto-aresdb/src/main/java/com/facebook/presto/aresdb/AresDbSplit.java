@@ -13,9 +13,9 @@
  */
 package com.facebook.presto.aresdb;
 
+import com.facebook.presto.aresdb.query.AugmentedAQL;
 import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.HostAddress;
-import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -27,15 +27,15 @@ public class AresDbSplit
         implements ConnectorSplit
 {
     private final AresDbConnectorId connectorId;
-    private final TableScanPipeline pipeline;
+    private final AugmentedAQL augmentedAql;
 
     @JsonCreator
     public AresDbSplit(
             @JsonProperty("connectorId") AresDbConnectorId connectorId,
-            @JsonProperty("pipeline") TableScanPipeline pipeline)
+            @JsonProperty("augmentedAql") AugmentedAQL augmentedAql)
     {
         this.connectorId = requireNonNull(connectorId, "connector id is null");
-        this.pipeline = requireNonNull(pipeline, "pipeline is null");
+        this.augmentedAql = requireNonNull(augmentedAql, "aql is null");
     }
 
     @JsonProperty
@@ -45,9 +45,9 @@ public class AresDbSplit
     }
 
     @JsonProperty
-    public TableScanPipeline getPipeline()
+    public AugmentedAQL getAugmentedAql()
     {
-        return pipeline;
+        return augmentedAql;
     }
 
     @Override

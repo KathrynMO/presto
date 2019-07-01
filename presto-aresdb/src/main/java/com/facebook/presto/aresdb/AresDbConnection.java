@@ -40,7 +40,6 @@ import java.util.concurrent.TimeUnit;
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_HTTP_ERROR;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
-import static com.google.common.base.Preconditions.checkArgument;
 import static io.airlift.http.client.StaticBodyGenerator.createStaticBodyGenerator;
 import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
 import static java.lang.String.format;
@@ -49,8 +48,6 @@ import static java.net.HttpURLConnection.HTTP_OK;
 
 public class AresDbConnection
 {
-    private static final String REQUEST_PAYLOAD_TEMPLATE = "{ \"queries\": [ %s ] }";
-
     private final AresDbConfig aresDbConfig;
     private final HttpClient httpClient;
 
@@ -140,25 +137,13 @@ public class AresDbConnection
         }
     }
 
-    private String getTablesUrl()
-    {
-        return "http://" + aresDbConfig.getMetadataServiceUrl() + "/tables/definitions";
-    }
-
-    private String getTableDefinitionUrl(String tableName)
-    {
-        checkArgument(tableName != null && !tableName.isEmpty(), "Not a valid table name");
-        return "http://" + aresDbConfig.getMetadataServiceUrl() + "/tables/definitions/" + tableName;
-    }
-
     public String queryAndGetResults(String aql)
     {
-        String payload = format(REQUEST_PAYLOAD_TEMPLATE, aql);
         Request.Builder requestBuilder = Request.builder()
                 .prepareGet()
                 .setUri(URI.create("http://" + aresDbConfig.getServiceUrl() + "/query/aql"));
 
-        requestBuilder = requestBuilder.setBodyGenerator(createStaticBodyGenerator(payload, StandardCharsets.UTF_8));
+        requestBuilder = requestBuilder.setBodyGenerator(createStaticBodyGenerator(aql, StandardCharsets.UTF_8));
 
         requestBuilder.setHeader(HttpHeaders.CONTENT_TYPE, "application/json")
                 .setHeader(aresDbConfig.getCallerHeaderParam(), aresDbConfig.getCallerHeaderValue())
@@ -176,7 +161,7 @@ public class AresDbConnection
         else {
             throw new AresDbException(ARESDB_HTTP_ERROR,
                     format("Unexpected response status from AresDB: status code: %s, error: %s, url: %s, headers: %s", stringResponse.getStatusCode(), stringResponse.getBody(), request.getUri(), request.getHeaders()),
-                    payload);
+                    aql);
         }
     }
 }

@@ -17,8 +17,8 @@ package com.facebook.presto.aresdb.query;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.facebook.presto.aresdb.AresDbColumnHandle;
-import com.facebook.presto.aresdb.AresDbConfig;
 import com.facebook.presto.aresdb.AresDbException;
+import com.facebook.presto.aresdb.AresDbSessionProperties;
 import com.facebook.presto.aresdb.AresDbTableHandle;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.pipeline.JoinPipelineNode;
@@ -30,7 +30,9 @@ import com.facebook.presto.spi.predicate.ValueSet;
 import com.facebook.presto.spi.type.TimeZoneKey;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.base.Joiner;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import io.airlift.units.Duration;
 import org.joda.time.DateTimeZone;
 import org.joda.time.chrono.ISOChronology;
@@ -123,6 +125,7 @@ public class AresDbQueryGeneratorContext
      */
     AresDbQueryGeneratorContext withLimit(long limit)
     {
+        checkArgument(!hasLimit(), "Don't support a limit atop a limit in ares");
         return new AresDbQueryGeneratorContext(selections, tableHandle, timeFilter, filters, aggregationApplied, groupByColumns, limit, joins);
     }
 
@@ -146,44 +149,24 @@ public class AresDbQueryGeneratorContext
         return tableHandle.getTimeColumnName();
     }
 
-    private static ISOChronology getChronology(ConnectorSession session)
+    public void validate(ConnectorSession session)
     {
-        if (session.isLegacyTimestamp()) {
-            return ISOChronology.getInstanceUTC();
+        Long limit = this.limit;
+        if (!hasAggregation()) {
+            if (limit == null) {
+                limit = -1L;
+            }
+            long maxLimit = AresDbSessionProperties.getMaxLimitWithoutAggregates(session);
+            if (maxLimit > 0 && (limit < 0 || limit > maxLimit)) {
+                throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, String.format("Inferred limit %d (specified %d) is greater than max aresdb allowed limit of %d when no aggregates are present in table %s", limit, this.limit, maxLimit, tableHandle.getTableName()));
+            }
         }
-        TimeZoneKey timeZoneKey = session.getTimeZoneKey();
-        DateTimeZone dateTimeZone = DateTimeZone.forID(timeZoneKey.getId());
-        return ISOChronology.getInstance(dateTimeZone);
-    }
-
-    // Stolen from com.facebook.presto.operator.scalar.DateTimeFunctions.localTime
-    private static long getSessionStartTimeInMs(ConnectorSession session)
-    {
-        if (session.isLegacyTimestamp()) {
-            return session.getStartTime();
-        }
-        else {
-            return getChronology(session).getZone().convertUTCToLocal(session.getStartTime());
-        }
-    }
-
-    private static Optional<Domain> retentionToDefaultTimeFilter(ConnectorSession session, Optional<Type> timestampType, Optional<Duration> duration)
-    {
-        if (!duration.isPresent() || !timestampType.isPresent()) {
-            return Optional.empty();
-        }
-        long sessionStartTimeInMs = getSessionStartTimeInMs(session);
-        long retentionInstantInMs = getChronology(session).seconds().subtract(sessionStartTimeInMs, duration.get().roundTo(TimeUnit.SECONDS));
-        long lowTimeSeconds = retentionInstantInMs / 1000; // round down
-        long highTimeSeconds = (sessionStartTimeInMs + 999) / 1000; // round up
-
-        return Optional.of(Domain.create(ValueSet.ofRanges(new Range(Marker.above(timestampType.get(), lowTimeSeconds), Marker.below(timestampType.get(), highTimeSeconds))), false));
     }
 
     /**
      * Convert the current context to a AresDB request (AQL)
      */
-    public AugmentedAQL toAresDbRequest(Optional<List<AresDbColumnHandle>> columnHandles, Optional<AresDbConfig> aresDbConfig, Optional<ConnectorSession> session)
+    public AugmentedAQL toAresDbRequest(Optional<ConnectorSession> session)
     {
         List<Selection> measures;
         List<Selection> dimensions;
@@ -230,8 +213,7 @@ public class AresDbQueryGeneratorContext
         request.put("table", tableHandle.getTableName());
         request.put("measures", measuresJson);
         request.put("dimensions", dimensionsJson);
-        Optional<Domain> timeFilter = this.timeFilter.isPresent() ? this.timeFilter : session.flatMap(s -> retentionToDefaultTimeFilter(s, tableHandle.getTimeColumnType(), tableHandle.getRetention()));
-        timeFilter.ifPresent(tf -> addTimeFilter(request, tableHandle.getTimeColumnName().get(), tf));
+        addTimeFilter(session, request, tableHandle.getTimeColumnName().get());
 
         if (!filters.isEmpty()) {
             JSONArray filterJson = new JSONArray();
@@ -240,20 +222,8 @@ public class AresDbQueryGeneratorContext
         }
 
         Long limit = this.limit;
-        if (!hasAggregation()) {
-            if (limit == null) {
-                limit = -1L;
-            }
-            if (session.isPresent()) {
-                // This is only safe to throw in the actual getNextPage (execution) code path.
-                // Outside of that, it will simply disable the (partial) pushdown and lead to wrong planning
-                // So we are using the presence of session as a proxy for being in the getNextPage code path
-                // Creating a separate "ExecutionContext" class would be an overkill, but worth doing for later
-                long maxLimit = aresDbConfig.map(AresDbConfig::getMaxLimitWithoutAggregates).orElse(-1L);
-                if (maxLimit > 0 && (limit < 0 || limit > maxLimit)) {
-                    throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, String.format("Inferred limit %d (specified %d) is greater than max aresdb allowed limit of %d when no aggregates are present in table %s", limit, this.limit, maxLimit, tableHandle.getTableName()));
-                }
-            }
+        if (!hasAggregation() && limit == null) {
+            limit = -1L;
         }
         if (limit != null) {
             request.put("limit", limit);
@@ -272,14 +242,13 @@ public class AresDbQueryGeneratorContext
         if (!requestJoins.isEmpty()) {
             request.put("joins", requestJoins);
         }
-        String aql = request.toJSONString();
 
-        Optional<List<AresDbOutputInfo>> expectedIndicesInOutput = getIndicesMappingFromAresDbSchemaToPrestoSchema(columnHandles, aql);
+        String aql = new JSONObject(ImmutableMap.of("queries", new JSONArray(ImmutableList.of(request)))).toJSONString();
 
-        return new AugmentedAQL(aql, expectedIndicesInOutput);
+        return new AugmentedAQL(aql, getReturnedAQLExpressions());
     }
 
-    private Optional<List<AresDbOutputInfo>> getIndicesMappingFromAresDbSchemaToPrestoSchema(Optional<List<AresDbColumnHandle>> columnHandles, String aql)
+    private List<AQLExpression> getReturnedAQLExpressions()
     {
         LinkedHashMap<String, Selection> expressionsInOrder = new LinkedHashMap<>();
         if (!groupByColumns.isEmpty()) {
@@ -314,38 +283,85 @@ public class AresDbQueryGeneratorContext
             expressionsInOrder.putAll(selections);
         }
 
-        return columnHandles.map(handles -> {
-            checkState(handles.size() == expressionsInOrder.size(), "Expected returned expressions %s to match column handles %s",
-                    Joiner.on(",").withKeyValueSeparator(":").join(expressionsInOrder), Joiner.on(",").join(handles));
-            Map<String, Integer> nameToIndex = new HashMap<>();
-            for (int i = 0; i < handles.size(); ++i) {
-                String columnName = handles.get(i).getColumnName();
-                Integer prev = nameToIndex.put(columnName.toLowerCase(ENGLISH), i);
-                if (prev != null) {
-                    throw new IllegalStateException(format("Expected AresDB column handle %s to occur only once, but we have: %s", columnName, Joiner.on(",").join(handles)));
-                }
-            }
-            ImmutableList.Builder<AresDbOutputInfo> outputInfos = ImmutableList.builder();
-            for (Map.Entry<String, Selection> expression : expressionsInOrder.entrySet()) {
-                Integer index = nameToIndex.get(expression.getKey());
-                if (index == null) {
-                    throw new IllegalStateException(format("Expected to find a AresDB column handle for the expression %s, but we have %s",
-                            expression, Joiner.on(",").withKeyValueSeparator(":").join(nameToIndex)));
-                }
-                outputInfos.add(new AresDbOutputInfo(index, expression.getValue().getTimeTokenizer()));
-            }
-            return outputInfos.build();
-        });
+        ImmutableList.Builder<AQLExpression> outputInfos = ImmutableList.builder();
+        for (Map.Entry<String, Selection> expression : expressionsInOrder.entrySet()) {
+            outputInfos.add(new AQLExpression(expression.getKey(), expression.getValue().getTimeTokenizer()));
+        }
+        return outputInfos.build();
     }
 
-    private static void addTimeFilter(JSONObject request, String timeColumn, Domain timeFilter)
+    public static List<AresDbOutputInfo> getIndicesMappingFromAresDbSchemaToPrestoSchema(List<AQLExpression> expressionsInOrder, List<AresDbColumnHandle> handles)
     {
-        if (timeFilter.isAll()) {
-            return;
+        checkState(handles.size() == expressionsInOrder.size(), "Expected returned expressions %s to match column handles %s",
+                Joiner.on(",").join(expressionsInOrder), Joiner.on(",").join(handles));
+        Map<String, Integer> nameToIndex = new HashMap<>();
+        for (int i = 0; i < handles.size(); ++i) {
+            String columnName = handles.get(i).getColumnName();
+            Integer prev = nameToIndex.put(columnName.toLowerCase(ENGLISH), i);
+            if (prev != null) {
+                throw new IllegalStateException(format("Expected AresDB column handle %s to occur only once, but we have: %s", columnName, Joiner.on(",").join(handles)));
+            }
         }
-        Optional<String> from = Optional.empty();
-        Optional<String> to = Optional.empty();
-        ValueSet values = timeFilter.getValues();
+        ImmutableList.Builder<AresDbOutputInfo> outputInfos = ImmutableList.builder();
+        expressionsInOrder.forEach(expression -> {
+            Integer index = nameToIndex.get(expression.getName());
+            if (index == null) {
+                throw new IllegalStateException(format("Expected to find a AresDB column handle for the expression %s, but we have %s",
+                        expression, Joiner.on(",").withKeyValueSeparator(":").join(nameToIndex)));
+            }
+            outputInfos.add(new AresDbOutputInfo(index, expression.getTimeTokenizer()));
+        });
+        return outputInfos.build();
+    }
+
+    public AresDbQueryGeneratorContext withNewTimeBound(Domain newTimeFilter)
+    {
+        return new AresDbQueryGeneratorContext(selections, tableHandle, Optional.of(newTimeFilter), filters, aggregationApplied, groupByColumns, limit, joins);
+    }
+
+    public static class TimeFilterParsed
+    {
+        private final Optional<Long> from;
+        private final Optional<Long> to;
+
+        public TimeFilterParsed(Optional<Long> from, Optional<Long> to)
+        {
+            this.from = from;
+            this.to = to;
+        }
+
+        public boolean hasBounds()
+        {
+            // If from is present, then so is to
+            Preconditions.checkState(from.isPresent() == to.isPresent());
+            return from.isPresent();
+        }
+
+        public long getBoundInSeconds()
+        {
+            // Only to be called when hasBounds
+            return to.get() - from.get();
+        }
+
+        public Optional<Long> getFrom()
+        {
+            return from;
+        }
+
+        public Optional<Long> getTo()
+        {
+            return to;
+        }
+    }
+
+    private static TimeFilterParsed parseTimeDomainFilter(Optional<Domain> timeFilter)
+    {
+        if (timeFilter.map(Domain::isAll).orElse(true)) {
+            return new TimeFilterParsed(Optional.empty(), Optional.empty());
+        }
+        Optional<Long> from = Optional.empty();
+        Optional<Long> to = Optional.empty();
+        ValueSet values = timeFilter.get().getValues();
         if (values.isSingleValue()) {
             from = objectToTimeLiteral(values.getSingleValue(), true);
             to = objectToTimeLiteral(values.getSingleValue(), false);
@@ -359,24 +375,84 @@ public class AresDbQueryGeneratorContext
                 to = objectToTimeLiteral(span.getHigh().getValue(), false);
             }
         }
-        if (!from.isPresent()) {
-            throw new IllegalArgumentException(String.format("Expected to extract a from for the time column %s from the given domain filter %s", timeColumn, timeFilter));
-        }
-        JSONObject timeFilterJson = new JSONObject();
-        timeFilterJson.put("column", timeColumn);
-        timeFilterJson.put("from", from.get());
-        to.ifPresent(s -> timeFilterJson.put("to", s));
-        request.put("timeFilter", timeFilterJson);
+        return new TimeFilterParsed(from, to);
     }
 
-    private static Optional<String> objectToTimeLiteral(Object literal, boolean isLow)
+    private void addTimeFilter(Optional<ConnectorSession> session, JSONObject request, String timeColumn)
+    {
+        TimeFilterParsed timeFilterParsed = getParsedTimeFilter(session);
+        if (timeFilterParsed.hasBounds()) {
+            JSONObject timeFilterJson = new JSONObject();
+            timeFilterJson.put("column", timeColumn);
+            timeFilterJson.put("from", String.format("%d", timeFilterParsed.from.get()));
+            timeFilterJson.put("to", String.format("%d", timeFilterParsed.to.get()));
+            request.put("timeFilter", timeFilterJson);
+        }
+    }
+
+    public TimeFilterParsed getParsedTimeFilter(Optional<ConnectorSession> session)
+    {
+        return parseTimeDomainFilter(getTimeFilterOrDefault(session));
+    }
+
+    private static Optional<Long> objectToTimeLiteral(Object literal, boolean isLow)
     {
         if (!(literal instanceof Number)) {
             return Optional.empty();
         }
         double num = ((Number) literal).doubleValue();
         long numAsLong = (long) (isLow ? Math.floor(num) : Math.ceil(num));
-        return Optional.of(Long.toString(numAsLong));
+        return Optional.of(numAsLong);
+    }
+
+    private static ISOChronology getChronology(ConnectorSession session)
+    {
+        if (session.isLegacyTimestamp()) {
+            return ISOChronology.getInstanceUTC();
+        }
+        TimeZoneKey timeZoneKey = session.getTimeZoneKey();
+        DateTimeZone dateTimeZone = DateTimeZone.forID(timeZoneKey.getId());
+        return ISOChronology.getInstance(dateTimeZone);
+    }
+
+    // Stolen from com.facebook.presto.operator.scalar.DateTimeFunctions.localTime
+    private static long getSessionStartTimeInMs(ConnectorSession session)
+    {
+        if (session.isLegacyTimestamp()) {
+            return session.getStartTime();
+        }
+        else {
+            return getChronology(session).getZone().convertUTCToLocal(session.getStartTime());
+        }
+    }
+
+    private static Optional<Domain> retentionToDefaultTimeFilter(Optional<ConnectorSession> session, AresDbTableHandle tableHandle)
+    {
+        Optional<Type> timeStampType = tableHandle.getTimeStampType();
+        Optional<Duration> retention = tableHandle.getRetention();
+        if (!retention.isPresent() || !timeStampType.isPresent() || !session.isPresent()) {
+            return Optional.empty();
+        }
+        long sessionStartTimeInMs = getSessionStartTimeInMs(session.get());
+        long retentionInstantInMs = getChronology(session.get()).seconds().subtract(sessionStartTimeInMs, retention.get().roundTo(TimeUnit.SECONDS));
+        long lowTimeSeconds = retentionInstantInMs / 1000; // round down
+        long highTimeSeconds = (sessionStartTimeInMs + 999) / 1000; // round up
+
+        return Optional.of(Domain.create(ValueSet.ofRanges(new Range(Marker.above(timeStampType.get(), lowTimeSeconds), Marker.below(timeStampType.get(), highTimeSeconds))), false));
+    }
+
+    public Optional<Domain> getTimeFilterOrDefault(Optional<ConnectorSession> session)
+    {
+        Optional<Domain> defaultTimeFilter = retentionToDefaultTimeFilter(session, tableHandle);
+        if (timeFilter.isPresent() && defaultTimeFilter.isPresent()) {
+            return Optional.of(timeFilter.get().intersect(defaultTimeFilter.get()));
+        }
+        else if (timeFilter.isPresent()) {
+            return timeFilter;
+        }
+        else {
+            return defaultTimeFilter;
+        }
     }
 
     public AresDbQueryGeneratorContext withJoin(AresDbQueryGeneratorContext otherContext, String otherTableName, List<JoinPipelineNode.EquiJoinClause> criterias)
@@ -402,6 +478,16 @@ public class AresDbQueryGeneratorContext
         });
         ret = ret.withProject(newSelections);
         return ret;
+    }
+
+    public boolean isInputTooBig(Optional<ConnectorSession> session)
+    {
+        TimeFilterParsed timeFilterParsed = getParsedTimeFilter(session);
+        if (!timeFilterParsed.hasBounds() || !session.isPresent()) {
+            // Assume global tables without retention are small
+            return false;
+        }
+        return timeFilterParsed.getBoundInSeconds() > AresDbSessionProperties.getSingleSplitLimit(session.get()).roundTo(TimeUnit.SECONDS);
     }
 
     public enum Origin
@@ -454,37 +540,6 @@ public class AresDbQueryGeneratorContext
         public Optional<String> getTimeTokenizer()
         {
             return timeTokenizer;
-        }
-    }
-
-    public static class AugmentedAQL
-    {
-        final String aql;
-        final Optional<List<AresDbOutputInfo>> outputInfo;
-
-        public AugmentedAQL(String aql, Optional<List<AresDbOutputInfo>> outputInfo)
-        {
-            this.aql = aql;
-            this.outputInfo = outputInfo;
-        }
-
-        public String getAql()
-        {
-            return aql;
-        }
-
-        public Optional<List<AresDbOutputInfo>> getOutputInfo()
-        {
-            return outputInfo;
-        }
-
-        @Override
-        public String toString()
-        {
-            return toStringHelper(this)
-                    .add("aql", aql)
-                    .add("outputInfo", outputInfo)
-                    .toString();
         }
     }
 

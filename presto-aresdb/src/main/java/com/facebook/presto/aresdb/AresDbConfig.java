@@ -28,8 +28,6 @@ public class AresDbConfig
 {
     private String serviceName;
     private String serviceUrl;
-    private String metadataServiceName;
-    private String metadataServiceUrl;
     private String serviceHeaderParam = "RPC-Service";
     private String callerHeaderValue = "presto";
     private String callerHeaderParam = "RPC-Caller";
@@ -43,6 +41,8 @@ public class AresDbConfig
     private boolean limitPushDownEnabled = true;
     private long maxLimitWithoutAggregates = -1;
     private boolean joinPushDownEnabled = true;
+
+    private Duration singleSplitLimit = new Duration(1, TimeUnit.DAYS);
 
     @NotNull
     public String getServiceName()
@@ -58,6 +58,19 @@ public class AresDbConfig
     }
 
     @NotNull
+    public Duration getSingleSplitLimit()
+    {
+        return singleSplitLimit;
+    }
+
+    @Config("single-split-limit")
+    public AresDbConfig setSingleSplitLimit(Duration singleSplitLimit)
+    {
+        this.singleSplitLimit = singleSplitLimit;
+        return this;
+    }
+
+    @NotNull
     public String getServiceUrl()
     {
         return serviceUrl;
@@ -67,32 +80,6 @@ public class AresDbConfig
     public AresDbConfig setServiceUrl(String serviceUrl)
     {
         this.serviceUrl = serviceUrl;
-        return this;
-    }
-
-    @NotNull
-    public String getMetadataServiceName()
-    {
-        return metadataServiceName;
-    }
-
-    @Config("metadata-service-name")
-    public AresDbConfig setMetadataServiceName(String metadataServiceName)
-    {
-        this.metadataServiceName = metadataServiceName;
-        return this;
-    }
-
-    @NotNull
-    public String getMetadataServiceUrl()
-    {
-        return metadataServiceUrl;
-    }
-
-    @Config("metadata-service-url")
-    public AresDbConfig setMetadataServiceUrl(String metadataServiceUrl)
-    {
-        this.metadataServiceUrl = metadataServiceUrl;
         return this;
     }
 

@@ -29,6 +29,7 @@ import com.facebook.presto.spi.pipeline.PushDownInExpression;
 import com.facebook.presto.spi.pipeline.PushDownInputColumn;
 import com.facebook.presto.spi.pipeline.PushDownLiteral;
 import com.facebook.presto.spi.pipeline.PushDownLogicalBinaryExpression;
+import com.facebook.presto.spi.pipeline.ScanParallelismFinder;
 import com.facebook.presto.spi.pipeline.TablePipelineNode;
 import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.facebook.presto.spi.pipeline.TableScanPipelineVisitor;
@@ -266,7 +267,7 @@ public class PinotSplitManager
 
         TableScanPipeline scanPipeline = getScanPipeline(pinotLayoutHandle);
 
-        if (PinotScanParallelismFinder.canParallelize(PinotSessionProperties.isScanParallelismEnabled(session), scanPipeline)) {
+        if (ScanParallelismFinder.canParallelize(PinotSessionProperties.isScanParallelismEnabled(session), scanPipeline)) {
             scanPipeline = addTupleDomainToScanPipelineIfNeeded(pinotLayoutHandle.getConstraint(), scanPipeline);
 
             return generateSplitsForSegmentBasedScan(pinotLayoutHandle, scanPipeline, PinotSessionProperties.getNumSegmentsPerSplit(session));

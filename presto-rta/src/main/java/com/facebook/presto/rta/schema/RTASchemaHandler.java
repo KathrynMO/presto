@@ -211,7 +211,12 @@ public class RTASchemaHandler
                 () -> populate(),
                 (long) config.getMetadataCacheExpiryTime().getValue(TimeUnit.SECONDS),
                 TimeUnit.SECONDS);
-        this.stateSupplier.get(); // force a prefetch to avoid a query time hit
+        try {
+            this.stateSupplier.get(); // force a prefetch to avoid a query time hit
+        }
+        catch (Exception e) {
+            log.warn("Error when preloading the RTAMS state, will try lazily", e);
+        }
     }
 
     public List<String> getAllNamespaces()

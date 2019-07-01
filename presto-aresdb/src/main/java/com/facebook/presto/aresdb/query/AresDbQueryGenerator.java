@@ -36,13 +36,16 @@ import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
+import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_FINAL_AGGREGATION_TOO_BIG_ERROR;
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_EXPRESSION;
 import static com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.Origin.DERIVED;
 import static com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.Origin.TABLE;
@@ -62,12 +65,21 @@ public class AresDbQueryGenerator
             "avg", "avg",
             "sum", "sum",
             "approx_distinct", "countdistincthll");
+    private static final Set<String> notSupportedPartialAggregationFunctions = ImmutableSet.of("approx_distinct");
+    private final Optional<AresDbConfig> aresDbConfig;
+    private final Optional<ConnectorSession> session;
 
-    private static AresDbQueryGeneratorContext generateContext(TableScanPipeline scanPipeline)
+    public AresDbQueryGenerator(Optional<AresDbConfig> aresDbConfig, Optional<ConnectorSession> session)
+    {
+        this.aresDbConfig = aresDbConfig;
+        this.session = session;
+    }
+
+    public static AresDbQueryGeneratorContext generateContext(TableScanPipeline scanPipeline, Optional<AresDbConfig> aresDbConfig, Optional<ConnectorSession> session)
     {
         AresDbQueryGeneratorContext context = null;
 
-        AresDbQueryGenerator visitor = new AresDbQueryGenerator();
+        AresDbQueryGenerator visitor = new AresDbQueryGenerator(aresDbConfig, session);
 
         for (PipelineNode node : scanPipeline.getPipelineNodes()) {
             context = node.accept(visitor, context);
@@ -76,9 +88,14 @@ public class AresDbQueryGenerator
         return context;
     }
 
-    public static AresDbQueryGeneratorContext.AugmentedAQL generate(TableScanPipeline scanPipeline, Optional<List<AresDbColumnHandle>> columnHandles, Optional<AresDbConfig> aresDbConfig, Optional<ConnectorSession> connectorSession)
+    public static AugmentedAQL generate(TableScanPipeline scanPipeline, Optional<AresDbConfig> aresDbConfig, Optional<ConnectorSession> session)
     {
-        return generateContext(scanPipeline).toAresDbRequest(columnHandles, aresDbConfig, connectorSession);
+        return generateContext(scanPipeline, aresDbConfig, session).toAresDbRequest(session);
+    }
+
+    private static boolean isPartialAggregationNotSupported(AggregationPipelineNode.Aggregation aggregation)
+    {
+        return notSupportedPartialAggregationFunctions.contains(aggregation.getFunction().toLowerCase(ENGLISH));
     }
 
     private static String handleAggregationFunction(AggregationPipelineNode.Aggregation aggregation, Map<String, Selection> inputSelections)
@@ -180,13 +197,13 @@ public class AresDbQueryGenerator
     public AresDbQueryGeneratorContext visitAggregationNode(AggregationPipelineNode aggregation, AresDbQueryGeneratorContext context)
     {
         requireNonNull(context, "context is null");
-        checkArgument(!aggregation.isPartial(), "partial aggregations are not supported in AresDb pushdown framework");
 
         LinkedHashMap<String, Selection> newSelections = new LinkedHashMap<>();
         List<String> groupByColumns = new ArrayList<>();
 
         boolean groupByExists = false;
         int numberOfAggregations = 0;
+        boolean partialAggregationSupported = true;
         for (AggregationPipelineNode.Node expr : aggregation.getNodes()) {
             switch (expr.getExprType()) {
                 case GROUP_BY: {
@@ -202,6 +219,9 @@ public class AresDbQueryGenerator
                 }
                 case AGGREGATE: {
                     AggregationPipelineNode.Aggregation aggr = (AggregationPipelineNode.Aggregation) expr;
+                    if (isPartialAggregationNotSupported(aggr)) {
+                        partialAggregationSupported = false;
+                    }
                     String aresDbAggFunction = handleAggregationFunction(aggr, context.getSelections());
                     newSelections.put(aggr.getOutputColumn(), Selection.of(aresDbAggFunction, DERIVED, aggr.getOutputType()));
                     numberOfAggregations++;
@@ -215,7 +235,9 @@ public class AresDbQueryGenerator
         if (numberOfAggregations > 1 && groupByExists) {
             throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, "AresDB doesn't support multiple aggregations with GROUP BY in a query");
         }
-
+        if (!aggregation.isPartial() && context.isInputTooBig(session) && partialAggregationSupported) {
+            throw new AresDbException(ARESDB_FINAL_AGGREGATION_TOO_BIG_ERROR, "Partial aggregation preferred in favor of final because input is too big");
+        }
         return context.withAggregation(newSelections, groupByColumns);
     }
 
@@ -228,7 +250,7 @@ public class AresDbQueryGenerator
         TableScanPipeline otherPipeline = join.getOtherPipeline().orElseThrow(() -> new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, "Right side must have a scan pipeline"));
         AresDbTableHandle other = (AresDbTableHandle) join.getOther();
         String otherTableName = other.getTableName();
-        AresDbQueryGeneratorContext otherContext = generateContext(rewriteOtherPipelineWithAlias(otherPipeline, otherTableName));
+        AresDbQueryGeneratorContext otherContext = generateContext(rewriteOtherPipelineWithAlias(otherPipeline, otherTableName), aresDbConfig, session);
         return context.withJoin(otherContext, otherTableName, join.getCriteria());
     }
 

@@ -27,11 +27,9 @@ import com.facebook.presto.sql.planner.plan.TableScanNode;
 import java.util.Optional;
 
 import static com.facebook.presto.matching.Capture.newCapture;
-import static com.facebook.presto.matching.Pattern.empty;
 import static com.facebook.presto.sql.planner.iterative.rule.PushDownUtils.convertAggregationToPushDownFormat;
 import static com.facebook.presto.sql.planner.iterative.rule.PushDownUtils.newTableScanWithPipeline;
 import static com.facebook.presto.sql.planner.plan.AggregationNode.Step.PARTIAL;
-import static com.facebook.presto.sql.planner.plan.Patterns.Aggregation.groupingColumns;
 import static com.facebook.presto.sql.planner.plan.Patterns.Aggregation.step;
 import static com.facebook.presto.sql.planner.plan.Patterns.ScanNode.hasPipeline;
 import static com.facebook.presto.sql.planner.plan.Patterns.aggregation;
@@ -60,9 +58,8 @@ public class PushPartialAggregationIntoTableScan
 {
     private static final Capture<TableScanNode> TABLE_SCAN = newCapture();
     private static final Pattern<AggregationNode> PATTERN = aggregation()
-            // Only consider PARTIAL un-grouped aggregations
+            // Only consider PARTIAL aggregations
             .with(step().equalTo(PARTIAL))
-            .with(empty(groupingColumns()))
             // Only consider aggregations without ORDER BY clause
             .matching(node -> !node.hasOrderings())
             .with(source().matching(tableScan().with(hasPipeline().matching(t -> t)).capturedAs(TABLE_SCAN)));

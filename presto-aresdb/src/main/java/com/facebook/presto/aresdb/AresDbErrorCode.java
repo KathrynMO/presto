@@ -19,6 +19,7 @@ import com.facebook.presto.spi.ErrorCodeSupplier;
 import com.facebook.presto.spi.ErrorType;
 
 import static com.facebook.presto.spi.ErrorType.EXTERNAL;
+import static com.facebook.presto.spi.ErrorType.INTERNAL_ERROR;
 import static com.facebook.presto.spi.ErrorType.USER_ERROR;
 
 public enum AresDbErrorCode
@@ -27,7 +28,8 @@ public enum AresDbErrorCode
     ARESDB_HTTP_ERROR(0, EXTERNAL), // numServersResponded < numServersQueried
     ARESDB_UNSUPPORTED_EXPRESSION(1, USER_ERROR), // expression not supported natively in AresDB
     ARESDB_UNSUPPORTED_OUTPUT_TYPE(2, USER_ERROR), // output type returned in not supported in AresDB
-    ARESDB_UNEXPECTED_ERROR(3, EXTERNAL); // output type returned in not supported in AresDB
+    ARESDB_UNEXPECTED_ERROR(3, EXTERNAL), // output type returned in not supported in AresDB
+    ARESDB_FINAL_AGGREGATION_TOO_BIG_ERROR(4, INTERNAL_ERROR); // Big final aggregation is not supported
 
     private final ErrorCode errorCode;
 
