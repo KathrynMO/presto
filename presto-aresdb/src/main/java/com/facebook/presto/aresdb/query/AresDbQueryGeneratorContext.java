@@ -33,16 +33,19 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import io.airlift.units.Duration;
 import org.joda.time.DateTimeZone;
 import org.joda.time.chrono.ISOChronology;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -200,19 +203,28 @@ public class AresDbQueryGeneratorContext
             measuresJson.add(measureJson);
         }
 
+        Set<TimeZoneKey> timeZonesInDimension = new HashSet<>();
         for (Selection dimension : dimensions) {
             JSONObject dimensionJson = new JSONObject();
             dimensionJson.put("sqlExpression", dimension.getDefinition());
-            if (dimension.timeTokenizer.isPresent()) {
-                dimensionJson.put("timeBucketizer", dimension.timeTokenizer.get());
-                dimensionJson.put("timeUnit", "second");
-            }
+            dimension.timeTokenizer.ifPresent(timeTokenizer -> {
+                timeZonesInDimension.add(timeTokenizer.getTimeZoneKey());
+                dimensionJson.put("timeBucketizer", timeTokenizer.getExpression());
+                dimensionJson.put("timeUnit", "second"); // timeUnit: millisecond does not really work
+            });
             dimensionsJson.add(dimensionJson);
         }
-
+        Optional<TimeZoneKey> tzKey = session.map(ConnectorSession::getTimeZoneKey);
+        if (!timeZonesInDimension.isEmpty()) {
+            if (timeZonesInDimension.size() > 1) {
+                throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, String.format("Found multiple time zone references in query: %", timeZonesInDimension));
+            }
+            tzKey = Optional.of(Iterables.getOnlyElement(timeZonesInDimension));
+        }
         request.put("table", tableHandle.getTableName());
         request.put("measures", measuresJson);
         request.put("dimensions", dimensionsJson);
+        tzKey.ifPresent(t -> request.put("timeZone", t.getId()));
         addTimeFilter(session, request, tableHandle.getTimeColumnName().get());
 
         if (!filters.isEmpty()) {
@@ -502,9 +514,9 @@ public class AresDbQueryGeneratorContext
         private String definition;
         private Origin origin;
         private Type outputType;
-        private Optional<String> timeTokenizer;
+        private Optional<TimeSpec> timeTokenizer;
 
-        private Selection(String definition, Origin origin, Type outputType, Optional<String> timeTokenizer)
+        private Selection(String definition, Origin origin, Type outputType, Optional<TimeSpec> timeTokenizer)
         {
             this.definition = definition;
             this.origin = origin;
@@ -517,7 +529,7 @@ public class AresDbQueryGeneratorContext
             return new Selection(definition, origin, outputType, Optional.empty());
         }
 
-        public static Selection of(String definition, Origin origin, Type outputType, Optional<String> timeTokenizer)
+        public static Selection of(String definition, Origin origin, Type outputType, Optional<TimeSpec> timeTokenizer)
         {
             return new Selection(definition, origin, outputType, timeTokenizer);
         }
@@ -537,7 +549,7 @@ public class AresDbQueryGeneratorContext
             return outputType;
         }
 
-        public Optional<String> getTimeTokenizer()
+        public Optional<TimeSpec> getTimeTokenizer()
         {
             return timeTokenizer;
         }
@@ -560,9 +572,9 @@ public class AresDbQueryGeneratorContext
     public static class AresDbOutputInfo
     {
         public final int index;
-        public final Optional<String> timeBucketizer;
+        public final Optional<TimeSpec> timeBucketizer;
 
-        public AresDbOutputInfo(int index, Optional<String> timeBucketizer)
+        public AresDbOutputInfo(int index, Optional<TimeSpec> timeBucketizer)
         {
             this.index = index;
             this.timeBucketizer = timeBucketizer;

@@ -29,7 +29,9 @@ import com.facebook.presto.spi.pipeline.PushDownLiteral;
 import com.facebook.presto.spi.pipeline.PushDownLogicalBinaryExpression;
 import com.facebook.presto.spi.pipeline.PushDownNotExpression;
 import com.facebook.presto.spi.type.StandardTypes;
+import com.facebook.presto.spi.type.TimeZoneKey;
 import com.google.common.collect.ImmutableSet;
+import org.joda.time.DateTimeZone;
 
 import java.util.Map;
 import java.util.Objects;
@@ -53,10 +55,10 @@ public class AresDbExpressionConverter
     public static class AresDbExpression
     {
         private final String definition;
-        private final Optional<String> timeBucketizer;
+        private final Optional<TimeSpec> timeBucketizer;
         private final Origin origin;
 
-        public AresDbExpression(String definition, Optional<String> timeBucketizer, Origin origin)
+        public AresDbExpression(String definition, Optional<TimeSpec> timeBucketizer, Origin origin)
         {
             this.definition = requireNonNull(definition, "definition is null");
             this.timeBucketizer = requireNonNull(timeBucketizer, "timeBucketizer is null");
@@ -68,7 +70,7 @@ public class AresDbExpressionConverter
             return definition;
         }
 
-        public Optional<String> getTimeBucketizer()
+        public Optional<TimeSpec> getTimeBucketizer()
         {
             return timeBucketizer;
         }
@@ -83,7 +85,7 @@ public class AresDbExpressionConverter
             return new AresDbExpression(definition, Optional.empty(), DERIVED);
         }
 
-        public static AresDbExpression derived(String definition, String timeBucketizer)
+        public static AresDbExpression derived(String definition, TimeSpec timeBucketizer)
         {
             return new AresDbExpression(definition, Optional.of(timeBucketizer), DERIVED);
         }
@@ -130,11 +132,13 @@ public class AresDbExpressionConverter
         }
 
         String inputColumn;
+        String inputTimeZone;
 
         PushDownFunction timeConversion = (PushDownFunction) timeInputParameter;
         switch (timeConversion.getName().toLowerCase(ENGLISH)) {
             case "from_unixtime":
                 inputColumn = timeConversion.getInputs().get(0).accept(this, context).getDefinition();
+                inputTimeZone = timeConversion.getInputs().size() > 1 ? getTimeZoneFromExpression(timeConversion.getInputs().get(1)) : DateTimeZone.UTC.getID();
                 break;
             default:
                 throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, "not supported: " + timeConversion.getName());
@@ -160,7 +164,18 @@ public class AresDbExpressionConverter
                 throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, "interval in date_trunc is not supported: " + intervalUnit.getStrValue());
         }
 
-        return derived(inputColumn, intervalUnit.getStrValue());
+        return derived(inputColumn, new TimeSpec(intervalUnit.getStrValue(), TimeZoneKey.getTimeZoneKey(inputTimeZone)));
+    }
+
+    private static String getTimeZoneFromExpression(PushDownExpression pushDownExpression)
+    {
+        if (pushDownExpression instanceof PushDownLiteral) {
+            String strValue = ((PushDownLiteral) pushDownExpression).getStrValue();
+            if (strValue != null) {
+                return strValue;
+            }
+        }
+        throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, "Only support string literal as the second argument of from_unixtime for timezone");
     }
 
     @Override

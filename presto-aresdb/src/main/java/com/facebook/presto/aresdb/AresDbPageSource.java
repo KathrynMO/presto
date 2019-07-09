@@ -30,7 +30,9 @@ import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.DoubleType;
 import com.facebook.presto.spi.type.IntegerType;
 import com.facebook.presto.spi.type.SmallintType;
+import com.facebook.presto.spi.type.TimeZoneKey;
 import com.facebook.presto.spi.type.TimestampType;
+import com.facebook.presto.spi.type.TimestampWithTimeZoneType;
 import com.facebook.presto.spi.type.TinyintType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
@@ -47,6 +49,7 @@ import java.util.stream.Collectors;
 
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNEXPECTED_ERROR;
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_OUTPUT_TYPE;
+import static com.facebook.presto.spi.type.DateTimeEncoding.packDateTimeWithZone;
 
 public class AresDbPageSource
         implements ConnectorPageSource
@@ -72,7 +75,7 @@ public class AresDbPageSource
         this.session = session;
     }
 
-    private static void setValue(Type type, BlockBuilder blockBuilder, Object value)
+    private void setValue(Type type, BlockBuilder blockBuilder, Object value, AresDbOutputInfo outputInfo)
     {
         if (value == null || "NULL".equals(value)) {
             blockBuilder.appendNull();
@@ -97,6 +100,12 @@ public class AresDbPageSource
             // output is always seconds since timeUnit is seconds
             long parsedValue = Long.parseUnsignedLong((String) value, 10) * 1000;
             type.writeLong(blockBuilder, parsedValue);
+        }
+        else if (type instanceof TimestampWithTimeZoneType) {
+            // output is always seconds since timeUnit is seconds
+            long parsedValue = Long.parseUnsignedLong((String) value, 10) * 1000;
+            TimeZoneKey tzKey = outputInfo.timeBucketizer.orElseThrow(() -> new IllegalStateException("Expected to find a     time bucketizer when handling a TimeStampWithTimeZone")).getTimeZoneKey();
+            type.writeLong(blockBuilder, packDateTimeWithZone(parsedValue, tzKey));
         }
         else if (type instanceof IntegerType) {
             int parsedValue;
@@ -248,7 +257,7 @@ public class AresDbPageSource
                 for (int columnIdx = 0; columnIdx < numCols; columnIdx++) {
                     AresDbOutputInfo outputInfo = outputInfos.get(columnIdx);
                     int outputIdx = outputInfo.index;
-                    setValue(types.get(outputIdx), blockBuilders.get(outputIdx), row.get(columnIdx));
+                    setValue(types.get(outputIdx), blockBuilders.get(outputIdx), row.get(columnIdx), outputInfo);
                 }
             }
 
@@ -285,7 +294,7 @@ public class AresDbPageSource
             for (int columnIdx = 0; columnIdx <= startingColumnIndex; columnIdx++) {
                 AresDbOutputInfo outputInfo = outputInfos.get(columnIdx);
                 int outputIdx = outputInfo.index;
-                setValue(types.get(outputIdx), blockBuilders.get(outputIdx), valuesSoFar.get(columnIdx));
+                setValue(types.get(outputIdx), blockBuilders.get(outputIdx), valuesSoFar.get(columnIdx), outputInfo);
             }
 
             removeLastColumnFromCurrentRow(valuesSoFar);

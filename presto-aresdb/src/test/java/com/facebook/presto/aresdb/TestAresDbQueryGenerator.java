@@ -26,9 +26,12 @@ import com.facebook.presto.spi.pipeline.FilterPipelineNode;
 import com.facebook.presto.spi.pipeline.JoinPipelineNode;
 import com.facebook.presto.spi.pipeline.PipelineNode;
 import com.facebook.presto.spi.pipeline.PushDownExpression;
+import com.facebook.presto.spi.pipeline.PushDownFunction;
 import com.facebook.presto.spi.pipeline.PushDownInputColumn;
+import com.facebook.presto.spi.pipeline.PushDownLiteral;
 import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.facebook.presto.spi.predicate.TupleDomain;
+import com.facebook.presto.spi.type.TimestampWithTimeZoneType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
 import com.facebook.presto.sql.planner.DomainTranslator;
@@ -246,7 +249,7 @@ public class TestAresDbQueryGenerator
                 scan(tableWithRetention, columnHandles),
                 createFilterForExpression(columnHandles, "regionid in (3, 4)", cols("regionid", "city", "secondssinceepoch")),
                 limit(50, true, cols("city"), types(VARCHAR))),
-                String.format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"}}]}", lowSecondsExpected, highSecondsExpected), Optional.of(session));
+                String.format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"},\"timeZone\":\"UTC\"}]}", lowSecondsExpected, highSecondsExpected), Optional.of(session));
     }
 
     @Test
@@ -352,13 +355,27 @@ public class TestAresDbQueryGenerator
         AggregationPipelineNode.Aggregation approxDistinct = new AggregationPipelineNode.Aggregation(ImmutableList.of("fare"), "approx_distinct", "approx_distinct_col", DOUBLE);
         AggregationPipelineNode.GroupByColumn groupByDay = new AggregationPipelineNode.GroupByColumn("day", "day", BIGINT);
         AggregationPipelineNode.GroupByColumn groupByCityId = new AggregationPipelineNode.GroupByColumn("city", "city", VARCHAR);
-        PushDownExpression dateTrunc = pdExpr("date_trunc('day', cast(from_unixtime(secondssinceepoch - 50) AS TIMESTAMP))");
+        PushDownExpression dateTrunc = pdExpr("date_trunc('day', cast(from_unixtime(secondssinceepoch - 50) AS TIMESTAMP))"); // redundant cast
+        PushDownFunction fromUnixTimeWithTz = new PushDownFunction(
+                TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE.getTypeSignature(),
+                "from_unixtime", ImmutableList.of(pdExpr("secondssinceepoch - 50"),
+                new PushDownLiteral(VARCHAR.getTypeSignature(), "America/New_York", null, null, null)));
+        PushDownExpression dateTruncWithTZ = new PushDownFunction(
+                TimestampWithTimeZoneType.TIMESTAMP_WITH_TIME_ZONE.getTypeSignature(),
+                "date_trunc",
+                ImmutableList.of(new PushDownLiteral(VARCHAR.getTypeSignature(), "week", null, null, null), fromUnixTimeWithTz));
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(city, fare, secondsSinceEpoch)),
                 project(ImmutableList.of(pdExpr("city"), pdExpr("fare"), dateTrunc),
                         cols("city", "fare", "day"), types(VARCHAR, DOUBLE, BIGINT)),
                 agg(ImmutableList.of(approxDistinct, groupByDay, groupByCityId), false)),
-                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"secondsSinceEpoch - 50\",\"timeBucketizer\":\"day\",\"timeUnit\":\"second\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\"}]}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"secondsSinceEpoch - 50\",\"timeBucketizer\":\"day\",\"timeUnit\":\"second\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\",\"timeZone\":\"UTC\"}]}");
+        testAQL(pipeline(
+                scan(aresdbTable, columnHandles(city, fare, secondsSinceEpoch)),
+                project(ImmutableList.of(pdExpr("city"), pdExpr("fare"), dateTruncWithTZ),
+                        cols("city", "fare", "day"), types(VARCHAR, DOUBLE, BIGINT)),
+                agg(ImmutableList.of(approxDistinct, groupByDay, groupByCityId), false)),
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"secondsSinceEpoch - 50\",\"timeBucketizer\":\"week\",\"timeUnit\":\"second\"},{\"sqlExpression\":\"city\"}],\"measures\":[{\"sqlExpression\":\"countdistincthll(fare)\"}],\"table\":\"tbl\",\"timeZone\":\"America/New_York\"}]}");
     }
 
     @Test(expectedExceptions = AresDbException.class)
@@ -370,7 +387,7 @@ public class TestAresDbQueryGenerator
         AggregationPipelineNode.Aggregation approxDistinct = new AggregationPipelineNode.Aggregation(ImmutableList.of("fare"), "approx_distinct", "fare_approx_distinct", DOUBLE);
         AggregationPipelineNode.GroupByColumn groupByDay = new AggregationPipelineNode.GroupByColumn("day", "day", BIGINT);
         AggregationPipelineNode.GroupByColumn groupByCityId = new AggregationPipelineNode.GroupByColumn("city", "city", VARCHAR);
-        PushDownExpression dateTrunc = pdExpr("date_trunc('day', cast(from_unixtime(secondssinceepoch - 50) AS TIMESTAMP))");
+        PushDownExpression dateTrunc = pdExpr("date_trunc('day', from_unixtime(secondssinceepoch - 50, 'America/New_York'))");
 
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles(city, fare, secondsSinceEpoch)),

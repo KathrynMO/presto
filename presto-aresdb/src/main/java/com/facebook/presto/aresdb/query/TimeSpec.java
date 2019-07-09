@@ -14,43 +14,42 @@
 
 package com.facebook.presto.aresdb.query;
 
+import com.facebook.presto.spi.type.TimeZoneKey;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.Optional;
-
 import static com.google.common.base.MoreObjects.toStringHelper;
 
-public class AQLExpression
+public class TimeSpec
 {
-    private String name;
-    private Optional<TimeSpec> timeTokenizer;
+    private final String expression;
+    private final TimeZoneKey timeZoneKey;
 
     @JsonCreator
-    public AQLExpression(@JsonProperty("name") String name, @JsonProperty("timeTokenizer") Optional<TimeSpec> timeTokenizer)
+    public TimeSpec(@JsonProperty("expression") String expression, @JsonProperty("timeZoneKey") TimeZoneKey timeZoneKey)
     {
-        this.name = name;
-        this.timeTokenizer = timeTokenizer;
+        this.expression = expression;
+        this.timeZoneKey = timeZoneKey;
     }
 
     @JsonProperty
-    public String getName()
+    public String getExpression()
     {
-        return name;
+        return expression;
     }
 
     @JsonProperty
-    public Optional<TimeSpec> getTimeTokenizer()
+    public TimeZoneKey getTimeZoneKey()
     {
-        return timeTokenizer;
+        return timeZoneKey;
     }
 
     @Override
     public String toString()
     {
         return toStringHelper(this)
-                .add("name", name)
-                .add("timeTokenizer", timeTokenizer)
+                .add("expression", expression)
+                .add("timeZoneKey", timeZoneKey)
                 .toString();
     }
 }
