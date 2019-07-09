@@ -15,6 +15,7 @@
 package com.facebook.presto.aresdb;
 
 import com.facebook.presto.aresdb.AresDbTable.AresDbColumn;
+import com.facebook.presto.spi.ConnectorSession;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
@@ -24,9 +25,10 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.net.HttpHeaders;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.Request;
-import io.airlift.http.client.StringResponseHandler.StringResponse;
 
 import javax.inject.Inject;
 
@@ -43,7 +45,6 @@ import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static io.airlift.http.client.StaticBodyGenerator.createStaticBodyGenerator;
 import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
-import static java.lang.String.format;
 import static java.net.HttpURLConnection.HTTP_MULT_CHOICE;
 import static java.net.HttpURLConnection.HTTP_OK;
 
@@ -141,7 +142,7 @@ public class AresDbConnection
         }
     }
 
-    public String queryAndGetResults(String aql)
+    public ListenableFuture<String> queryAndGetResultsAsync(String aql, int index, ConnectorSession session)
     {
         Request.Builder requestBuilder = Request.builder()
                 .prepareGet()
@@ -156,25 +157,20 @@ public class AresDbConnection
             requestBuilder.setHeader(entry.getKey(), entry.getValue());
         }
         Request request = requestBuilder.build();
-        long duration;
         long startTime = ticker.read();
-        StringResponse stringResponse;
-        try {
-            stringResponse = httpClient.execute(request, createStringResponseHandler());
-        }
-        finally {
-            duration = ticker.read() - startTime;
-        }
-
-        aresDbMetrics.monitorQueryRequest(request, stringResponse, duration, TimeUnit.NANOSECONDS);
-
-        if (isValidAresDbHttpResponseCode(stringResponse.getStatusCode())) {
-            return stringResponse.getBody();
-        }
-        else {
-            throw new AresDbException(ARESDB_HTTP_ERROR,
-                    format("Unexpected response status from AresDB: status code: %s, error: %s, url: %s, headers: %s", stringResponse.getStatusCode(), stringResponse.getBody(), request.getUri(), request.getHeaders()),
-                    aql);
-        }
+        session.getSessionLogger().log(() -> "Aql Issue Start " + index);
+        return Futures.transform(httpClient.executeAsync(request, createStringResponseHandler()), (stringResponse) -> {
+            long duration = ticker.read() - startTime;
+            aresDbMetrics.monitorQueryRequest(request, stringResponse, duration, TimeUnit.NANOSECONDS);
+            session.getSessionLogger().log(() -> "Aql Issue End " + index);
+            if (isValidAresDbHttpResponseCode(stringResponse.getStatusCode())) {
+                return stringResponse.getBody();
+            }
+            else {
+                throw new AresDbException(ARESDB_HTTP_ERROR,
+                        String.format("Unexpected response status from AresDB: status code: %s, error: %s, url: %s, headers: %s", stringResponse.getStatusCode(), stringResponse.getBody(), request.getUri(), request.getHeaders()),
+                        aql);
+            }
+        });
     }
 }

@@ -29,12 +29,17 @@ import com.facebook.presto.spi.predicate.Marker;
 import com.facebook.presto.spi.predicate.Range;
 import com.facebook.presto.spi.predicate.ValueSet;
 import com.facebook.presto.spi.type.Type;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import io.airlift.units.Duration;
 
 import javax.inject.Inject;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 public class AresDbSplitManager
@@ -56,25 +61,43 @@ public class AresDbSplitManager
         AresDbQueryGeneratorContext aresDbQueryGeneratorContext = AresDbQueryGenerator.generateContext(tableScanPipeline, Optional.of(aresDbConfig), Optional.of(session));
         aresDbQueryGeneratorContext.validate(session);
         Optional<AresDbQueryGeneratorContext.TimeFilterParsed> parsedTimeFilter = aresDbQueryGeneratorContext.getParsedTimeFilter(Optional.of(session));
-        ImmutableList.Builder<AresDbSplit> splitBuilder = ImmutableList.builder();
         Optional<Type> timeStampType = ((AresDbTableLayoutHandle) layout).getTable().getTimeStampType();
+        AugmentedAQL fullRequest = aresDbQueryGeneratorContext.toAresDbRequest(Optional.of(session));
+        List<AresDbSplit.AresQL> aqls = new ArrayList<>();
 
         if (timeStampType.isPresent() && parsedTimeFilter.isPresent() && aresDbQueryGeneratorContext.isInputTooBig(Optional.of(session)) && ScanParallelismFinder.canParallelize(true, tableScanPipeline)) {
             long low = parsedTimeFilter.get().getFrom();
             long high = parsedTimeFilter.get().getTo();
-            Duration singleSplitLimit = AresDbSessionProperties.getSingleSplitLimit(session);
+            Duration singleSplitLimit = AresDbSessionProperties.getSingleSplitLimit(session).get();
             long limit = singleSplitLimit.roundTo(TimeUnit.SECONDS);
+            long unsafeToCacheLowMark = AresDbSessionProperties.getUnsafeToCacheInterval(session).map(interval -> AresDbQueryGeneratorContext.getSessionStartTimeInMs(session) / 1000L - interval.roundTo(TimeUnit.SECONDS)).orElse(0L);
+
             do {
-                long nextLow = Math.min(low + limit, high);
-                AresDbQueryGeneratorContext withNewTimeFilter = aresDbQueryGeneratorContext.withNewTimeBound(Domain.create(ValueSet.ofRanges(new Range(Marker.above(timeStampType.get(), low), Marker.below(timeStampType.get(), nextLow))), false));
-                splitBuilder.add(new AresDbSplit(aresDbTableLayoutHandle.getTable().getConnectorId(), withNewTimeFilter.toAresDbRequest(Optional.of(session))));
-                low = nextLow;
+                long thisSplitHigh = low % limit == 0 ? low + limit : ((low + limit - 1) / limit) * limit;
+                thisSplitHigh = Math.min(thisSplitHigh, high);
+                AresDbQueryGeneratorContext withNewTimeFilter = aresDbQueryGeneratorContext.withNewTimeBound(Domain.create(ValueSet.ofRanges(new Range(Marker.above(timeStampType.get(), low), Marker.below(timeStampType.get(), thisSplitHigh))), false));
+                // Only cache non partial splits that are not too fresh
+                boolean cacheable = thisSplitHigh < unsafeToCacheLowMark && thisSplitHigh - low == limit;
+                aqls.add(new AresDbSplit.AresQL(withNewTimeFilter.toAresDbRequest(Optional.of(session)).getAql(), cacheable));
+                low = thisSplitHigh;
             }
             while (low < high);
+
+            Collections.shuffle(aqls, ThreadLocalRandom.current());
         }
         else {
-            AugmentedAQL augmentedAQL = aresDbQueryGeneratorContext.toAresDbRequest(Optional.of(session));
-            splitBuilder.add(new AresDbSplit(aresDbTableLayoutHandle.getTable().getConnectorId(), augmentedAQL));
+            aqls.add(new AresDbSplit.AresQL(fullRequest.getAql(), false));
+        }
+        ImmutableList.Builder<AresDbSplit> splitBuilder = ImmutableList.builder();
+
+        int maxNumSplits = AresDbSessionProperties.getMaxNumOfSplits(session);
+        int numAqlsPerSplit = aqls.size() > maxNumSplits ? aqls.size() / maxNumSplits : 1;
+        Preconditions.checkState(numAqlsPerSplit >= 1);
+        int aqlIdx = 0;
+        while (aqlIdx < aqls.size()) {
+            int newAqlIdx = Math.min(aqlIdx + numAqlsPerSplit, aqls.size());
+            splitBuilder.add(new AresDbSplit(aresDbTableLayoutHandle.getTable().getConnectorId(), fullRequest.getExpressions(), ImmutableList.copyOf(aqls.subList(aqlIdx, newAqlIdx))));
+            aqlIdx = newAqlIdx;
         }
         return new FixedSplitSource(splitBuilder.build());
     }

@@ -503,7 +503,7 @@ public class AresDbQueryGeneratorContext
     }
 
     // Stolen from com.facebook.presto.operator.scalar.DateTimeFunctions.localTime
-    private static long getSessionStartTimeInMs(ConnectorSession session)
+    public static long getSessionStartTimeInMs(ConnectorSession session)
     {
         if (session.isLegacyTimestamp()) {
             return session.getStartTime();
@@ -560,7 +560,8 @@ public class AresDbQueryGeneratorContext
             // Assume global tables without retention are small
             return false;
         }
-        return timeFilterParsed.get().getBoundInSeconds() > AresDbSessionProperties.getSingleSplitLimit(session.get()).roundTo(TimeUnit.SECONDS);
+        Optional<Duration> singleSplitLimit = AresDbSessionProperties.getSingleSplitLimit(session.get());
+        return singleSplitLimit.map(limit -> timeFilterParsed.get().getBoundInSeconds() > limit.roundTo(TimeUnit.SECONDS)).orElse(false);
     }
 
     public enum Origin

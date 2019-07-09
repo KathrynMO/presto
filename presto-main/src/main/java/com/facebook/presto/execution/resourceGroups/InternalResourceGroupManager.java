@@ -114,6 +114,7 @@ public final class InternalResourceGroupManager<C>
     public void submit(Statement statement, ManagedQueryExecution queryExecution, SelectionContext<C> selectionContext, Executor executor)
     {
         if (resourcesGroupsDisabled) {
+            queryExecution.getSession().getSessionLogger().log(() -> "resourcegroups disabled starting query immediately");
             executor.execute(queryExecution::start);
             return;
         }

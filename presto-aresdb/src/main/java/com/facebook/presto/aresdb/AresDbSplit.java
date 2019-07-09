@@ -13,7 +13,7 @@
  */
 package com.facebook.presto.aresdb;
 
-import com.facebook.presto.aresdb.query.AugmentedAQL;
+import com.facebook.presto.aresdb.query.AQLExpression;
 import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.HostAddress;
 import com.fasterxml.jackson.annotation.JsonCreator;
@@ -21,21 +21,59 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
 
+import static com.google.common.base.MoreObjects.toStringHelper;
 import static java.util.Objects.requireNonNull;
 
 public class AresDbSplit
         implements ConnectorSplit
 {
     private final AresDbConnectorId connectorId;
-    private final AugmentedAQL augmentedAql;
+    private final List<AQLExpression> expressions;
+    private final List<AresQL> aqls;
+
+    public static class AresQL
+    {
+        private final String aql;
+        private final boolean cacheable;
+
+        @JsonCreator
+        public AresQL(@JsonProperty("aql") String aql, @JsonProperty("cacheable") boolean cacheable)
+        {
+            this.aql = aql;
+            this.cacheable = cacheable;
+        }
+
+        @JsonProperty
+        public String getAql()
+        {
+            return aql;
+        }
+
+        @JsonProperty
+        public boolean isCacheable()
+        {
+            return cacheable;
+        }
+
+        @Override
+        public String toString()
+        {
+            return toStringHelper(this)
+                    .add("aql", aql)
+                    .add("cacheable", cacheable)
+                    .toString();
+        }
+    }
 
     @JsonCreator
     public AresDbSplit(
             @JsonProperty("connectorId") AresDbConnectorId connectorId,
-            @JsonProperty("augmentedAql") AugmentedAQL augmentedAql)
+            @JsonProperty("expressions") List<AQLExpression> expressions,
+            @JsonProperty("aqls") List<AresQL> aqls)
     {
         this.connectorId = requireNonNull(connectorId, "connector id is null");
-        this.augmentedAql = requireNonNull(augmentedAql, "aql is null");
+        this.expressions = requireNonNull(expressions, "expressions is null");
+        this.aqls = requireNonNull(aqls, "aqls is null");
     }
 
     @JsonProperty
@@ -45,9 +83,9 @@ public class AresDbSplit
     }
 
     @JsonProperty
-    public AugmentedAQL getAugmentedAql()
+    public List<AQLExpression> getExpressions()
     {
-        return augmentedAql;
+        return expressions;
     }
 
     @Override
@@ -60,6 +98,21 @@ public class AresDbSplit
     public List<HostAddress> getAddresses()
     {
         return null;
+    }
+
+    public List<AresQL> getAqls()
+    {
+        return aqls;
+    }
+
+    @Override
+    public String toString()
+    {
+        return toStringHelper(this)
+                .add("connectorId", connectorId)
+                .add("expressions", expressions)
+                .add("aqls", aqls)
+                .toString();
     }
 
     @Override

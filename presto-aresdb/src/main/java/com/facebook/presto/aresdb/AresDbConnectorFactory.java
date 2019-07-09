@@ -110,6 +110,7 @@ public class AresDbConnectorFactory
                 binder.bind(NodeManager.class).toInstance(context.getNodeManager());
                 binder.bind(AresDbMetrics.class).in(Scopes.SINGLETON);
                 newExporter(binder).export(AresDbMetrics.class).as(generatedNameOf(AresDbMetrics.class, catalogName));
+                newExporter(binder).export(AresDbPageSourceProvider.class).as(generatedNameOf(AresDbPageSourceProvider.class, catalogName));
             });
 
             Injector injector = app.strictConfig().doNotInitializeLogging().setRequiredConfigurationProperties(config).initialize();

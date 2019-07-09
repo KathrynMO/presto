@@ -55,7 +55,7 @@ public class AresDbMetricsStat
     {
         time.add(duration, timeUnit);
         numRequests.update(1);
-        if (isValidAresDbHttpResponseCode(response.getStatusCode())) {
+        if (response != null && isValidAresDbHttpResponseCode(response.getStatusCode())) {
             responseSize.add(response.getBody().length());
         }
         else {

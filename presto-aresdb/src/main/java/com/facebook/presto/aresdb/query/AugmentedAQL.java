@@ -16,8 +16,10 @@ package com.facebook.presto.aresdb.query;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.google.common.collect.ImmutableList;
 
 import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 
@@ -30,7 +32,7 @@ public class AugmentedAQL
     public AugmentedAQL(@JsonProperty("aql") String aql, @JsonProperty("expressions") List<AQLExpression> expressions)
     {
         this.aql = aql;
-        this.expressions = expressions;
+        this.expressions = ImmutableList.copyOf(expressions);
     }
 
     @JsonProperty
@@ -52,5 +54,25 @@ public class AugmentedAQL
                 .add("aql", aql)
                 .add("expressions", expressions)
                 .toString();
+    }
+
+    @Override
+    public boolean equals(Object o)
+    {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        AugmentedAQL that = (AugmentedAQL) o;
+        return Objects.equals(aql, that.aql) &&
+                Objects.equals(expressions, that.expressions);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(aql, expressions);
     }
 }

@@ -16,12 +16,14 @@ package com.facebook.presto.aresdb;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
 import io.airlift.configuration.Config;
+import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import io.airlift.units.MinDuration;
 
 import javax.validation.constraints.NotNull;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 public class AresDbConfig
@@ -42,7 +44,14 @@ public class AresDbConfig
     private long maxLimitWithoutAggregates = -1;
     private boolean joinPushDownEnabled = true;
 
-    private Duration singleSplitLimit = new Duration(1, TimeUnit.DAYS);
+    private Optional<Duration> singleSplitLimit = Optional.empty();
+    private Optional<Duration> unsafeToCacheInterval = Optional.empty();
+
+    // The default data cache duration of 0 seconds, means that the ares page cache is evicted entirely
+    // based on size bounds and not time.
+    private Duration cacheDuration = new Duration(0, TimeUnit.SECONDS);
+    private DataSize maxCacheSize = new DataSize(0, DataSize.Unit.BYTE); // Default is not to cache
+    private int maxNumOfSplits = 3;
 
     @NotNull
     public String getServiceName()
@@ -58,7 +67,20 @@ public class AresDbConfig
     }
 
     @NotNull
-    public Duration getSingleSplitLimit()
+    public Optional<Duration> getUnsafeToCacheInterval()
+    {
+        return unsafeToCacheInterval;
+    }
+
+    @Config("unsafe-to-cache-interval")
+    public AresDbConfig setUnsafeToCacheInterval(Duration unsafeToCacheInterval)
+    {
+        this.unsafeToCacheInterval = Optional.of(unsafeToCacheInterval);
+        return this;
+    }
+
+    @NotNull
+    public Optional<Duration> getSingleSplitLimit()
     {
         return singleSplitLimit;
     }
@@ -66,7 +88,7 @@ public class AresDbConfig
     @Config("single-split-limit")
     public AresDbConfig setSingleSplitLimit(Duration singleSplitLimit)
     {
-        this.singleSplitLimit = singleSplitLimit;
+        this.singleSplitLimit = Optional.of(singleSplitLimit);
         return this;
     }
 
@@ -219,6 +241,43 @@ public class AresDbConfig
     public AresDbConfig setJoinPushDownEnabled(boolean joinPushDownEnabled)
     {
         this.joinPushDownEnabled = joinPushDownEnabled;
+        return this;
+    }
+
+    @NotNull
+    public DataSize getMaxCacheSize()
+    {
+        return maxCacheSize;
+    }
+
+    @Config("max-cache-size")
+    public AresDbConfig setMaxCacheSize(DataSize maxCacheSize)
+    {
+        this.maxCacheSize = maxCacheSize;
+        return this;
+    }
+
+    public Duration getCacheDuration()
+    {
+        return cacheDuration;
+    }
+
+    @Config("cache-duration")
+    public AresDbConfig setCacheDuration(Duration cacheDuration)
+    {
+        this.cacheDuration = cacheDuration;
+        return this;
+    }
+
+    public int getMaxNumOfSplits()
+    {
+        return maxNumOfSplits;
+    }
+
+    @Config("max-num-of-splits")
+    public AresDbConfig setMaxNumOfSplits(int maxNumOfSplits)
+    {
+        this.maxNumOfSplits = maxNumOfSplits;
         return this;
     }
 }

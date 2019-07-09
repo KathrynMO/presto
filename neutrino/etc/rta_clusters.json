@@ -5,7 +5,11 @@
         "aresdb" : {
            "config" : {
                "service-url" : "localhost:5436",
-               "max-limit-without-aggregates" : 10000
+               "max-limit-without-aggregates" : 10000,
+               "single-split-limit" : "1d",
+               "cache-duration" : "2d",
+               "unsafe-to-cache-interval" : "36h",
+               "max-cache-size" : "100MB"
            },
            "environments" : {
                "phx2-staginga" : {

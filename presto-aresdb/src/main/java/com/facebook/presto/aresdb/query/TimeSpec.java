@@ -18,6 +18,8 @@ import com.facebook.presto.spi.type.TimeZoneKey;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 import static com.google.common.base.MoreObjects.toStringHelper;
 
 public class TimeSpec
@@ -51,5 +53,25 @@ public class TimeSpec
                 .add("expression", expression)
                 .add("timeZoneKey", timeZoneKey)
                 .toString();
+    }
+
+    @Override
+    public boolean equals(Object o)
+    {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        TimeSpec timeSpec = (TimeSpec) o;
+        return Objects.equals(expression, timeSpec.expression) &&
+                Objects.equals(timeZoneKey, timeSpec.timeZoneKey);
+    }
+
+    @Override
+    public int hashCode()
+    {
+        return Objects.hash(expression, timeZoneKey);
     }
 }
