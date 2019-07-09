@@ -63,7 +63,7 @@ public class PinotPageSourceProvider
             case SEGMENT:
                 return new PinotSegmentPageSource(session, this.pinotConfig, this.pinotQueryClient, pinotSplit, handles);
             case BROKER:
-                return new PinotBrokerPageSource(this.pinotConfig, pinotSplit.getPipeline().get(), handles, clusterInfoFetcher);
+                return new PinotBrokerPageSource(this.pinotConfig, session, pinotSplit.getPipeline().get(), handles, clusterInfoFetcher);
             default:
                 throw new UnsupportedOperationException("Unknown Pinot split type: " + pinotSplit.getSplitType());
         }

@@ -169,6 +169,7 @@ public class StageStateMachine
 
     public boolean transitionToFinished()
     {
+        session.getSessionLogger().log(() -> "finishing stage " + getStageId());
         return stageState.setIf(FINISHED, currentState -> !currentState.isDone());
     }
 

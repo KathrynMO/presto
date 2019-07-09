@@ -17,6 +17,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.facebook.presto.pinot.query.PinotQueryGenerator;
 import com.facebook.presto.spi.ConnectorPageSource;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.Page;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.block.BlockBuilder;
@@ -57,16 +58,18 @@ public class PinotBrokerPageSource
     private final PinotConfig pinotConfig;
     private final List<PinotColumnHandle> columnHandles;
     private final PinotClusterInfoFetcher clusterInfoFetcher;
+    private final ConnectorSession session;
 
     private boolean finished;
     private long readTimeNanos;
 
-    public PinotBrokerPageSource(PinotConfig pinotConfig, TableScanPipeline scanPipeline, List<PinotColumnHandle> columnHandles, PinotClusterInfoFetcher clusterInfoFetcher)
+    public PinotBrokerPageSource(PinotConfig pinotConfig, ConnectorSession session, TableScanPipeline scanPipeline, List<PinotColumnHandle> columnHandles, PinotClusterInfoFetcher clusterInfoFetcher)
     {
         this.pinotConfig = pinotConfig;
         this.scanPipeline = scanPipeline;
         this.clusterInfoFetcher = clusterInfoFetcher;
         this.columnHandles = ImmutableList.copyOf(columnHandles);
+        this.session = session;
     }
 
     private static void setValue(Type type, BlockBuilder blockBuilder, String value)
@@ -173,6 +176,8 @@ public class PinotBrokerPageSource
 
     private int issuePqlAndPopulate(String table, String psql, int numGroupByClause, List<BlockBuilder> blockBuilders, List<Type> types)
     {
+        session.getSessionLogger().log(() -> "Pql Issue Start");
+
         String queryHost;
         Optional<String> rpcService;
         if (pinotConfig.getRestProxyUrl() != null) {
@@ -187,7 +192,11 @@ public class PinotBrokerPageSource
                 .preparePost()
                 .setUri(URI.create(String.format(QUERY_URL_TEMPLATE, queryHost)));
         String body = clusterInfoFetcher.doHttpActionWithHeaders(builder, Optional.of(String.format(REQUEST_PAYLOAD_TEMPLATE, psql)), rpcService);
-        return populateFromPqlResults(psql, numGroupByClause, blockBuilders, types, body);
+        session.getSessionLogger().log(() -> "Pql Issue End");
+
+        int rowCount = populateFromPqlResults(psql, numGroupByClause, blockBuilders, types, body);
+        session.getSessionLogger().log(() -> "Pql JSON Parsed");
+        return rowCount;
     }
 
     @VisibleForTesting

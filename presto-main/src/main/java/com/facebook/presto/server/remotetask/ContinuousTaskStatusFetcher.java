@@ -13,6 +13,7 @@
  */
 package com.facebook.presto.server.remotetask;
 
+import com.facebook.presto.Session;
 import com.facebook.presto.execution.StateMachine;
 import com.facebook.presto.execution.TaskId;
 import com.facebook.presto.execution.TaskManager;
@@ -75,6 +76,7 @@ class ContinuousTaskStatusFetcher
 
     private final AtomicLong currentRequestStartNanos = new AtomicLong();
     private final TaskManager taskManager;
+    private final Session session;
 
     @GuardedBy("this")
     private boolean running;
@@ -93,7 +95,7 @@ class ContinuousTaskStatusFetcher
             ScheduledExecutorService errorScheduledExecutor,
             RemoteTaskStats stats,
             ScheduledExecutorService timeoutExecutor,
-            TaskManager taskManager)
+            TaskManager taskManager, Session session)
     {
         this.timeoutExecutor = timeoutExecutor;
         requireNonNull(initialTaskStatus, "initialTaskStatus is null");
@@ -109,6 +111,7 @@ class ContinuousTaskStatusFetcher
         this.httpClient = httpClient;
 
         this.taskManager = taskManager;
+        this.session = requireNonNull(session, "session is null");
         this.errorTracker = new RequestErrorTracker(taskId, initialTaskStatus.getSelf(), this.taskManager == null ? new Backoff(maxErrorDuration) : Backoff.createNeverBackingOff(), errorScheduledExecutor, "getting task status");
         this.stats = requireNonNull(stats, "stats is null");
     }
@@ -160,7 +163,7 @@ class ContinuousTaskStatusFetcher
             errorRateLimit.addListener(this::scheduleNextRequest, executor);
             return;
         }
-
+        session.getSessionLogger().log(() -> String.format("scheduling new task status fetch call %s", taskId));
         if (taskManager != null) {
             Duration waitTime = randomizeWaitTime(refreshMaxWait);
             // TODO: With current implementation, a newly completed driver group won't trigger immediate HTTP response,
@@ -281,6 +284,7 @@ class ContinuousTaskStatusFetcher
                 // don't update to an older version (same version is ok)
                 return false;
             }
+            session.getSessionLogger().log(() -> String.format("updated task status %s to state %s", taskId, newValue.getState()));
             return true;
         });
 

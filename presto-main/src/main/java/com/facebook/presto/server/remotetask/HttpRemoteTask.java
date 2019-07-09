@@ -263,7 +263,8 @@ public final class HttpRemoteTask
                     errorScheduledExecutor,
                     stats,
                     timeoutExecutor,
-                    taskManager);
+                    taskManager,
+                    session);
 
             this.taskInfoFetcher = new TaskInfoFetcher(
                     this::failTask,
@@ -293,6 +294,7 @@ public final class HttpRemoteTask
 
             partitionedSplitCountTracker.setPartitionedSplitCount(getPartitionedSplitCount());
             updateSplitQueueSpace();
+            session.getSessionLogger().log(() -> String.format("remote task %s created", taskId));
         }
     }
 
@@ -507,6 +509,7 @@ public final class HttpRemoteTask
             taskStatusFetcher.start();
             taskInfoFetcher.start();
             scheduleUpdate();
+            session.getSessionLogger().log(() -> String.format("started task %s", taskId));
         }
     }
 
@@ -532,6 +535,7 @@ public final class HttpRemoteTask
         if (!needsUpdate.get() || taskStatus.getState().isDone()) {
             return;
         }
+        session.getSessionLogger().log(() -> String.format("sending update to task %s start", taskId));
 
         // if there is a request already running, wait for it to complete
         if (this.currentRequest != null && !this.currentRequest.isDone()) {
@@ -899,6 +903,7 @@ public final class HttpRemoteTask
         {
             try (SetThreadName ignored = new SetThreadName("UpdateResponseHandler-%s", taskId)) {
                 try {
+                    session.getSessionLogger().log(() -> String.format("task %s updated", taskId));
                     long currentRequestStartNanos;
                     synchronized (HttpRemoteTask.this) {
                         currentRequest = null;

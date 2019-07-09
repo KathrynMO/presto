@@ -193,6 +193,8 @@ public class SqlQueryScheduler
         // Only fetch a distribution once per query to assure all stages see the same machine assignments
         Map<PartitioningHandle, NodePartitionMap> partitioningCache = new HashMap<>();
 
+        session.getSessionLogger().log(() -> "creating private sql query scheduler with plan");
+
         OutputBufferId rootBufferId = Iterables.getOnlyElement(rootOutputBuffers.getBuffers().keySet());
         List<SqlStageExecution> stages = createStages(
                 (fragmentId, tasks, noMoreExchangeLocations) -> updateQueryOutputLocations(queryStateMachine, rootBufferId, tasks, noMoreExchangeLocations),
@@ -539,6 +541,8 @@ public class SqlQueryScheduler
     {
         try (SetThreadName ignored = new SetThreadName("Query-%s", queryStateMachine.getQueryId())) {
             Set<StageId> completedStages = new HashSet<>();
+            queryStateMachine.getSession().getSessionLogger().log(() -> "sql query scheduler schedule");
+
             ExecutionSchedule executionSchedule = executionPolicy.createExecutionSchedule(stages.values());
             while (!executionSchedule.isFinished()) {
                 List<ListenableFuture<?>> blockedStages = new ArrayList<>();

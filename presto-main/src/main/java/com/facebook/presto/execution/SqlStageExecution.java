@@ -482,6 +482,7 @@ public final class SqlStageExecution
                 return;
             }
 
+            stateMachine.getSession().getSessionLogger().log(() -> String.format("In stage %s, Updating task %s to %s", getStageId(), taskStatus.getTaskId(), taskStatus.getState()));
             TaskState taskState = taskStatus.getState();
             if (taskState == TaskState.FAILED) {
                 RuntimeException failure = taskStatus.getFailures().stream()

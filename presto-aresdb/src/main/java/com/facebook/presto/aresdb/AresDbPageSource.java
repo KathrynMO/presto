@@ -233,7 +233,10 @@ public class AresDbPageSource
 
     private int issueAqlAndPopulate(AugmentedAQL aresQL, List<BlockBuilder> blockBuilders, List<Type> types, List<AresDbOutputInfo> outputInfos)
     {
+        session.getSessionLogger().log(() -> "Aql Issue Start");
+
         String response = aresDbConnection.queryAndGetResults(aresQL.getAql());
+        session.getSessionLogger().log(() -> "Aql Issue End");
 
         JSONObject responseJson = JSONObject.parseObject(response);
         if (Optional.ofNullable(responseJson.getJSONArray("errors")).map(x -> x.size()).orElse(0) > 0) {
@@ -260,7 +263,7 @@ public class AresDbPageSource
                     setValue(types.get(outputIdx), blockBuilders.get(outputIdx), row.get(columnIdx), outputInfo);
                 }
             }
-
+            session.getSessionLogger().log(() -> "Aql JSON Parsed");
             return numRows;
         }
         else {
@@ -274,6 +277,7 @@ public class AresDbPageSource
                 JSONObject groupByResult = resultsJson.getJSONObject(entryIdx);
                 rowIndex = parserGroupByObject(groupByResult, currentRow, outputInfos, blockBuilders, types, 0, rowIndex);
             }
+            session.getSessionLogger().log(() -> "Aql JSON Parsed");
             return rowIndex;
         }
     }

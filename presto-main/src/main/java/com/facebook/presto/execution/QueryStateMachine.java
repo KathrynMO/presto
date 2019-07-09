@@ -691,6 +691,7 @@ public class QueryStateMachine
     public boolean transitionToFinishing()
     {
         queryStateTimer.beginFinishing();
+        session.getSessionLogger().log(() -> "Query state machine finishing");
 
         if (!queryState.setIf(FINISHING, currentState -> currentState != FINISHING && !currentState.isDone())) {
             return false;
@@ -724,6 +725,7 @@ public class QueryStateMachine
     {
         cleanupQueryQuietly();
         queryStateTimer.endQuery();
+        session.getSessionLogger().log(() -> "Query state machine finished");
 
         queryState.setIf(FINISHED, currentState -> !currentState.isDone());
     }
@@ -901,6 +903,7 @@ public class QueryStateMachine
     {
         QueryInfo queryInfo = getQueryInfo(stageInfo);
         if (queryInfo.isFinalQueryInfo()) {
+            session.getSessionLogger().log(() -> "Marking query finally done");
             queryInfo.setSessionLogEntries(session.getSessionLogger().getEntries());
             finalQueryInfo.compareAndSet(Optional.empty(), Optional.of(queryInfo));
         }

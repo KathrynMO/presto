@@ -135,7 +135,7 @@ public class TaskInfo
                 new OutputBufferInfo("UNINITIALIZED", OPEN, true, true, 0, 0, 0, 0, bufferStates),
                 ImmutableSet.of(),
                 taskStats,
-                Optional.of(session.getSessionLogger().getEntries()),
+                Optional.empty(),
                 true);
     }
 

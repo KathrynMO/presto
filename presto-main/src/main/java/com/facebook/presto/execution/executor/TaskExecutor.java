@@ -351,6 +351,7 @@ public class TaskExecutor
 
     private void splitFinished(PrioritizedSplitRunner split)
     {
+        split.getTaskHandle().getSessionLogger().log(() -> "split is finished " + split);
         completedSplitsPerLevel.incrementAndGet(split.getPriority().getLevel());
         synchronized (this) {
             allSplits.remove(split);
@@ -426,6 +427,7 @@ public class TaskExecutor
     private synchronized void startSplit(PrioritizedSplitRunner split)
     {
         allSplits.add(split);
+        split.getTaskHandle().getSessionLogger().log(() -> "offering split " + split);
         waitingSplits.offer(split);
     }
 
@@ -478,6 +480,7 @@ public class TaskExecutor
                     try (SetThreadName splitName = new SetThreadName(threadId)) {
                         RunningSplitInfo splitInfo = new RunningSplitInfo(ticker.read(), threadId, Thread.currentThread(), split.getInfo());
                         runningSplitInfos.add(splitInfo);
+                        split.getTaskHandle().getSessionLogger().log(() -> "running split " + split);
                         runningSplits.add(split);
 
                         ListenableFuture<?> blocked;
@@ -487,6 +490,7 @@ public class TaskExecutor
                         finally {
                             runningSplitInfos.remove(splitInfo);
                             runningSplits.remove(split);
+                            split.getTaskHandle().getSessionLogger().log(() -> "pausing split " + split);
                         }
 
                         if (split.isFinished()) {

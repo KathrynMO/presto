@@ -680,6 +680,7 @@ public class InternalResourceGroup
     {
         checkState(Thread.holdsLock(root), "Must hold lock to start a query");
         synchronized (root) {
+            query.getSession().getSessionLogger().log(() -> "beginning to start query in background");
             runningQueries.add(query);
             InternalResourceGroup group = this;
             while (group.parent.isPresent()) {
