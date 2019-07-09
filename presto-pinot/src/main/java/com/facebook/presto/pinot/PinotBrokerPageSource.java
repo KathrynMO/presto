@@ -26,6 +26,7 @@ import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.BooleanType;
 import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.DoubleType;
+import com.facebook.presto.spi.type.FixedWidthType;
 import com.facebook.presto.spi.type.IntegerType;
 import com.facebook.presto.spi.type.SmallintType;
 import com.facebook.presto.spi.type.TimestampType;
@@ -63,6 +64,7 @@ public class PinotBrokerPageSource
 
     private boolean finished;
     private long readTimeNanos;
+    private long completedBytes;
 
     public PinotBrokerPageSource(PinotConfig pinotConfig, ConnectorSession session, TableScanPipeline scanPipeline, List<PinotColumnHandle> columnHandles, PinotClusterInfoFetcher clusterInfoFetcher)
     {
@@ -73,44 +75,54 @@ public class PinotBrokerPageSource
         this.session = session;
     }
 
-    private static void setValue(Type type, BlockBuilder blockBuilder, String value)
+    private void setValue(Type type, BlockBuilder blockBuilder, String value)
     {
         if (value == null) {
             blockBuilder.appendNull();
             return;
         }
-
-        if (type instanceof BigintType) {
-            type.writeLong(blockBuilder, Double.valueOf(value).longValue());
-        }
-        else if (type instanceof IntegerType) {
-            blockBuilder.writeInt(Double.valueOf(value).intValue());
-        }
-        else if (type instanceof TinyintType) {
-            blockBuilder.writeByte(Double.valueOf(value).byteValue());
-        }
-        else if (type instanceof SmallintType) {
-            blockBuilder.writeShort(Double.valueOf(value).shortValue());
-        }
-        else if (type instanceof BooleanType) {
-            type.writeBoolean(blockBuilder, Boolean.valueOf(value));
-        }
-        else if (type instanceof DecimalType || type instanceof DoubleType) {
-            type.writeDouble(blockBuilder, Double.valueOf(value));
-        }
-        else if (type instanceof TimestampType) {
-            type.writeLong(blockBuilder, Long.valueOf(value));
+        boolean handled = true;
+        if (type instanceof FixedWidthType) {
+            completedBytes += ((FixedWidthType) type).getFixedSize();
+            if (type instanceof BigintType) {
+                type.writeLong(blockBuilder, Double.valueOf(value).longValue());
+            }
+            else if (type instanceof IntegerType) {
+                blockBuilder.writeInt(Double.valueOf(value).intValue());
+            }
+            else if (type instanceof TinyintType) {
+                blockBuilder.writeByte(Double.valueOf(value).byteValue());
+            }
+            else if (type instanceof SmallintType) {
+                blockBuilder.writeShort(Double.valueOf(value).shortValue());
+            }
+            else if (type instanceof BooleanType) {
+                type.writeBoolean(blockBuilder, Boolean.valueOf(value));
+            }
+            else if (type instanceof DecimalType || type instanceof DoubleType) {
+                type.writeDouble(blockBuilder, Double.valueOf(value));
+            }
+            else if (type instanceof TimestampType) {
+                type.writeLong(blockBuilder, Long.valueOf(value));
+            }
+            else {
+                handled = false;
+            }
         }
         else if (type instanceof VarcharType) {
             Slice slice = Slices.utf8Slice(value);
             blockBuilder.writeBytes(slice, 0, slice.length()).closeEntry();
+            completedBytes += slice.length();
         }
         else {
+            handled = false;
+        }
+        if (!handled) {
             throw new PinotException(PinotErrorCode.PINOT_UNSUPPORTED_COLUMN_TYPE, Optional.empty(), "type '" + type + "' not supported");
         }
     }
 
-    private static void setValuesForGroupby(List<BlockBuilder> blockBuilders, List<Type> types, int numGroupByClause, JSONArray group, String[] values)
+    private void setValuesForGroupby(List<BlockBuilder> blockBuilders, List<Type> types, int numGroupByClause, JSONArray group, String[] values)
     {
         for (int k = 0; k < group.size(); k++) {
             setValue(types.get(k), blockBuilders.get(k), group.getString(k));
@@ -126,7 +138,7 @@ public class PinotBrokerPageSource
     @Override
     public long getCompletedBytes()
     {
-        return 0;
+        return completedBytes;
     }
 
     @Override
@@ -203,7 +215,7 @@ public class PinotBrokerPageSource
     }
 
     @VisibleForTesting
-    public static int populateFromPqlResults(String psql, int numGroupByClause, List<BlockBuilder> blockBuilders, List<Type> types, String body)
+    public int populateFromPqlResults(String psql, int numGroupByClause, List<BlockBuilder> blockBuilders, List<Type> types, String body)
     {
         JSONObject jsonBody = JSONObject.parseObject(body);
 

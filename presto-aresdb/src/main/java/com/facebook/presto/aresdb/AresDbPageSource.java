@@ -28,6 +28,7 @@ import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.BooleanType;
 import com.facebook.presto.spi.type.DecimalType;
 import com.facebook.presto.spi.type.DoubleType;
+import com.facebook.presto.spi.type.FixedWidthType;
 import com.facebook.presto.spi.type.IntegerType;
 import com.facebook.presto.spi.type.SmallintType;
 import com.facebook.presto.spi.type.TimeZoneKey;
@@ -77,6 +78,7 @@ public class AresDbPageSource
     // state information
     private int pagesConsumed;
     private long readTimeNanos;
+    private long completedBytes;
 
     public AresDbPageSource(AresDbSplit aresDbSplit, List<AresDbColumnHandle> columns, AresDbConnection aresDbConnection, ConnectorSession session, Cache<AugmentedAQL, Page> cache)
     {
@@ -168,17 +170,20 @@ public class AresDbPageSource
             }
 
             type.writeLong(blockBuilder, parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof TimestampType) {
             // output is always seconds since timeUnit is seconds
             long parsedValue = Long.parseUnsignedLong((String) value, 10) * 1000;
             type.writeLong(blockBuilder, parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof TimestampWithTimeZoneType) {
             // output is always seconds since timeUnit is seconds
             long parsedValue = Long.parseUnsignedLong((String) value, 10) * 1000;
             TimeZoneKey tzKey = outputInfo.timeBucketizer.orElseThrow(() -> new IllegalStateException("Expected to find a     time bucketizer when handling a TimeStampWithTimeZone")).getTimeZoneKey();
             type.writeLong(blockBuilder, packDateTimeWithZone(parsedValue, tzKey));
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof IntegerType) {
             int parsedValue;
@@ -192,6 +197,7 @@ public class AresDbPageSource
                 throw new AresDbException(ARESDB_UNSUPPORTED_OUTPUT_TYPE, "For type '" + type + "' received unsupported output type: " + value.getClass());
             }
             blockBuilder.writeInt(parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof TinyintType) {
             byte parsedValue;
@@ -205,6 +211,7 @@ public class AresDbPageSource
                 throw new AresDbException(ARESDB_UNSUPPORTED_OUTPUT_TYPE, "For type '" + type + "' received unsupported output type: " + value.getClass());
             }
             blockBuilder.writeByte(parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof SmallintType) {
             short parsedValue;
@@ -218,10 +225,12 @@ public class AresDbPageSource
                 throw new AresDbException(ARESDB_UNSUPPORTED_OUTPUT_TYPE, "For type '" + type + "' received unsupported output type: " + value.getClass());
             }
             blockBuilder.writeShort(parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof BooleanType) {
             if (value instanceof String) {
                 type.writeBoolean(blockBuilder, Boolean.valueOf((String) value));
+                completedBytes += ((FixedWidthType) type).getFixedSize();
             }
             else {
                 throw new AresDbException(ARESDB_UNSUPPORTED_OUTPUT_TYPE, "For type '" + type + "' received unsupported output type: " + value.getClass());
@@ -240,11 +249,13 @@ public class AresDbPageSource
             }
 
             type.writeDouble(blockBuilder, parsedValue);
+            completedBytes += ((FixedWidthType) type).getFixedSize();
         }
         else if (type instanceof VarcharType) {
             if (value instanceof String) {
                 Slice slice = Slices.utf8Slice((String) value);
                 blockBuilder.writeBytes(slice, 0, slice.length()).closeEntry();
+                completedBytes += slice.length();
             }
             else {
                 throw new AresDbException(ARESDB_UNSUPPORTED_OUTPUT_TYPE, "For type '" + type + "' received unsupported output type: " + value.getClass());
@@ -258,7 +269,7 @@ public class AresDbPageSource
     @Override
     public long getCompletedBytes()
     {
-        return 0;
+        return completedBytes;
     }
 
     @Override

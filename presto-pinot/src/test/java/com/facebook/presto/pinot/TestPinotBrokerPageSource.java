@@ -15,13 +15,17 @@ package com.facebook.presto.pinot;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.facebook.presto.spi.ColumnHandle;
 import com.facebook.presto.spi.PageBuilder;
 import com.facebook.presto.spi.PrestoException;
 import com.facebook.presto.spi.block.BlockBuilder;
+import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.facebook.presto.spi.type.BigintType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
+import com.facebook.presto.testing.TestingConnectorSession;
 import com.google.common.collect.ImmutableList;
+import io.airlift.http.client.testing.TestingHttpClient;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
@@ -31,12 +35,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.facebook.presto.pinot.PinotBrokerPageSource.populateFromPqlResults;
+import static com.facebook.presto.pinot.PinotColumnHandle.PinotColumnType.REGULAR;
+import static com.facebook.presto.pinot.PinotTestUtils.pipeline;
+import static com.facebook.presto.pinot.PinotTestUtils.scan;
+import static com.facebook.presto.spi.type.BigintType.BIGINT;
+import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
+import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertTrue;
 
 public class TestPinotBrokerPageSource
 {
+    private static PinotTableHandle pinotTable = new PinotTableHandle("connId", "schema", "tbl");
+    private static PinotColumnHandle regionId = new PinotColumnHandle("regionId", BIGINT, REGULAR);
+    private static PinotColumnHandle city = new PinotColumnHandle("city", VARCHAR, REGULAR);
+    private static PinotColumnHandle fare = new PinotColumnHandle("fare", DOUBLE, REGULAR);
+    private static PinotColumnHandle secondsSinceEpoch = new PinotColumnHandle("secondsSinceEpoch", BIGINT, REGULAR);
+
     private static class PqlParsedInfo
     {
         final int numGroupByColumns;
@@ -131,13 +146,14 @@ public class TestPinotBrokerPageSource
         PqlParsedInfo pqlParsedInfo = getBasicInfoFromPql(pqlResponse);
         ImmutableList.Builder<BlockBuilder> blockBuilders = ImmutableList.builder();
         PageBuilder pageBuilder = new PageBuilder(types);
+        PinotBrokerPageSource pageSource = getPinotBrokerPageSource();
         for (int i = 0; i < types.size(); ++i) {
             blockBuilders.add(pageBuilder.getBlockBuilder(i));
         }
         Optional<Class<? extends PrestoException>> thrown = Optional.empty();
         int numRows = -1;
         try {
-            numRows = populateFromPqlResults(pql, pqlParsedInfo.numGroupByColumns, blockBuilders.build(), types, pqlResponse);
+            numRows = pageSource.populateFromPqlResults(pql, pqlParsedInfo.numGroupByColumns, blockBuilders.build(), types, pqlResponse);
         }
         catch (PrestoException e) {
             thrown = Optional.of(e.getClass());
@@ -147,5 +163,16 @@ public class TestPinotBrokerPageSource
             assertEquals(types.size(), pqlParsedInfo.numColumns);
             assertEquals(numRows, pqlParsedInfo.numRows);
         }
+    }
+
+    private static PinotBrokerPageSource getPinotBrokerPageSource()
+    {
+        List<PinotColumnHandle> pinotColumnHandles = ImmutableList.of(regionId, fare, city, fare, secondsSinceEpoch);
+        List<ColumnHandle> columnHandles = ImmutableList.of(regionId, fare, city, fare, secondsSinceEpoch);
+        PinotConfig pinotConfig = new PinotConfig();
+        TableScanPipeline dummyScanPipeline = pipeline(scan(pinotTable, columnHandles));
+        return new PinotBrokerPageSource(pinotConfig, new TestingConnectorSession(ImmutableList.of()), dummyScanPipeline, pinotColumnHandles, new PinotClusterInfoFetcher(pinotConfig, new PinotMetrics(), new TestingHttpClient((request) -> {
+            throw new IllegalStateException("Don't expect to be called");
+        })));
     }
 }

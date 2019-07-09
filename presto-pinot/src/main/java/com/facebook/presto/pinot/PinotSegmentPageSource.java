@@ -165,36 +165,38 @@ public class PinotSegmentPageSource
      */
     private void fetchPinotData()
     {
-        log.debug("Fetching data from Pinot for table %s, segments %s", split.getPql(), split.getSegments());
         long startTimeNanos = System.nanoTime();
-        int idx = 0;
-        for (PinotColumnHandle columnHandle : columnHandles) {
-            pinotColumnNameIndexMap.put(columnHandle.getColumnName(), idx++);
+        try {
+            int idx = 0;
+            for (PinotColumnHandle columnHandle : columnHandles) {
+                pinotColumnNameIndexMap.put(columnHandle.getColumnName(), idx++);
+            }
+
+            Map<ServerInstance, DataTable> dataTableMap = pinotQueryClient.queryPinotServerForDataTable(split.getPql().get(), split.getSegmentHost().get(), split.getSegments(), PinotSessionProperties.getConnectionTimeout(session), PinotSessionProperties.isIgnoreEmptyResponses(session), PinotSessionProperties.getPinotRetryCount(session));
+            dataTableMap.values().stream()
+                    // ignore empty tables and tables with 0 rows
+                    .filter(table -> table != null && table.getNumberOfRows() > 0)
+                    .forEach(dataTable ->
+                    {
+                        checkExceptions(dataTable, split);
+                        // Store each dataTable which will later be constructed into Pages.
+                        // Also update estimatedMemoryUsage, mostly represented by the size of all dataTables, using numberOfRows and fieldTypes combined as an estimate
+                        int estimatedTableSizeInBytes = IntStream.rangeClosed(0, dataTable.getDataSchema().size() - 1)
+                                .map(i -> getEstimatedColumnSizeInBytes(dataTable.getDataSchema().getColumnType(i)) * dataTable.getNumberOfRows())
+                                .reduce(0, Integer::sum);
+                        dataTableList.add(new PinotDataTableWithSize(dataTable, estimatedTableSizeInBytes));
+                        estimatedMemoryUsageInBytes += estimatedTableSizeInBytes;
+                    });
+
+            this.columnTypes = columnHandles
+                    .stream()
+                    .map(columnHandle -> getTypeForBlock(columnHandle))
+                    .collect(Collectors.toList());
+            isPinotDataFetched = true;
         }
-
-        Map<ServerInstance, DataTable> dataTableMap = pinotQueryClient.queryPinotServerForDataTable(split.getPql().get(), split.getSegmentHost().get(), split.getSegments(), PinotSessionProperties.getConnectionTimeout(session), PinotSessionProperties.isIgnoreEmptyResponses(session), PinotSessionProperties.getPinotRetryCount(session));
-        dataTableMap.values().stream()
-                // ignore empty tables and tables with 0 rows
-                .filter(table -> table != null && table.getNumberOfRows() > 0)
-                .forEach(dataTable ->
-                {
-                    checkExceptions(dataTable, split);
-                    // Store each dataTable which will later be constructed into Pages.
-                    // Also update estimatedMemoryUsage, mostly represented by the size of all dataTables, using numberOfRows and fieldTypes combined as an estimate
-                    int estimatedTableSizeInBytes = IntStream.rangeClosed(0, dataTable.getDataSchema().size() - 1)
-                            .map(i -> getEstimatedColumnSizeInBytes(dataTable.getDataSchema().getColumnType(i)) * dataTable.getNumberOfRows())
-                            .reduce(0, Integer::sum);
-                    dataTableList.add(new PinotDataTableWithSize(dataTable, estimatedTableSizeInBytes));
-                    estimatedMemoryUsageInBytes += estimatedTableSizeInBytes;
-                });
-
-        this.columnTypes = columnHandles
-                .stream()
-                .map(columnHandle -> getTypeForBlock(columnHandle))
-                .collect(Collectors.toList());
-
-        readTimeNanos = System.nanoTime() - startTimeNanos;
-        isPinotDataFetched = true;
+        finally {
+            readTimeNanos += System.nanoTime() - startTimeNanos;
+        }
     }
 
     @Override
