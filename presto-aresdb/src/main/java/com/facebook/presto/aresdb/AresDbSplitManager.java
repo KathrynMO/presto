@@ -55,13 +55,13 @@ public class AresDbSplitManager
         TableScanPipeline tableScanPipeline = aresDbTableLayoutHandle.getScanPipeline().get();
         AresDbQueryGeneratorContext aresDbQueryGeneratorContext = AresDbQueryGenerator.generateContext(tableScanPipeline, Optional.of(aresDbConfig), Optional.of(session));
         aresDbQueryGeneratorContext.validate(session);
-        AresDbQueryGeneratorContext.TimeFilterParsed parsedTimeFilter = aresDbQueryGeneratorContext.getParsedTimeFilter(Optional.of(session));
+        Optional<AresDbQueryGeneratorContext.TimeFilterParsed> parsedTimeFilter = aresDbQueryGeneratorContext.getParsedTimeFilter(Optional.of(session));
         ImmutableList.Builder<AresDbSplit> splitBuilder = ImmutableList.builder();
         Optional<Type> timeStampType = ((AresDbTableLayoutHandle) layout).getTable().getTimeStampType();
 
-        if (timeStampType.isPresent() && parsedTimeFilter.hasBounds() && aresDbQueryGeneratorContext.isInputTooBig(Optional.of(session)) && ScanParallelismFinder.canParallelize(true, tableScanPipeline)) {
-            long low = parsedTimeFilter.getFrom().get();
-            long high = parsedTimeFilter.getTo().get();
+        if (timeStampType.isPresent() && parsedTimeFilter.isPresent() && aresDbQueryGeneratorContext.isInputTooBig(Optional.of(session)) && ScanParallelismFinder.canParallelize(true, tableScanPipeline)) {
+            long low = parsedTimeFilter.get().getFrom();
+            long high = parsedTimeFilter.get().getTo();
             Duration singleSplitLimit = AresDbSessionProperties.getSingleSplitLimit(session);
             long limit = singleSplitLimit.roundTo(TimeUnit.SECONDS);
             do {

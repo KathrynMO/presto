@@ -30,7 +30,7 @@ import com.facebook.presto.spi.pipeline.PushDownFunction;
 import com.facebook.presto.spi.pipeline.PushDownInputColumn;
 import com.facebook.presto.spi.pipeline.PushDownLiteral;
 import com.facebook.presto.spi.pipeline.TableScanPipeline;
-import com.facebook.presto.spi.predicate.TupleDomain;
+import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.type.TimestampWithTimeZoneType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.sql.analyzer.FeaturesConfig;
@@ -40,6 +40,7 @@ import com.facebook.presto.sql.planner.Symbol;
 import com.facebook.presto.sql.planner.SymbolAllocator;
 import com.facebook.presto.sql.planner.iterative.rule.PushDownUtils;
 import com.facebook.presto.sql.tree.Expression;
+import com.facebook.presto.sql.tree.SymbolReference;
 import com.facebook.presto.testing.TestingConnectorSession;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -219,11 +220,18 @@ public class TestAresDbQueryGenerator
         Map<Symbol, Type> incomingTypes = incomingColumns.stream().map(c -> (AresDbColumnHandle) c).collect(toImmutableMap(ch -> new Symbol(ch.getColumnName().toLowerCase(ENGLISH)), AresDbColumnHandle::getDataType));
         DomainTranslator.ExtractionResult extractionResult = DomainTranslator.fromPredicate(metadata, session, predicate, new SymbolAllocator(incomingTypes).getTypes());
         Optional<PushDownExpression> remainingPredicate = Optional.ofNullable(new PushDownExpressionGenerator(typeConverter).process(extractionResult.getRemainingExpression()));
-        Optional<TupleDomain<String>> symbolNameToDomains;
+        Optional<Map<String, FilterPipelineNode.TypeAndDomain>> symbolNameToDomains;
 
         // only do this if the remainingPushdownPredicate is not null
-        if (remainingPredicate.isPresent() && !extractionResult.getTupleDomain().isAll()) {
-            symbolNameToDomains = Optional.of(extractionResult.getTupleDomain().transform(Symbol::getName));
+        if (remainingPredicate.isPresent() && !extractionResult.getTupleDomain().isAll() && extractionResult.getTupleDomain().getDomains().isPresent()) {
+            Map<Symbol, Domain> symbolDomainMap = extractionResult.getTupleDomain().getDomains().get();
+            ImmutableMap.Builder<String, FilterPipelineNode.TypeAndDomain> domainMap = ImmutableMap.builder();
+            symbolDomainMap.forEach((symbol, domain) -> {
+                String name = symbol.getName();
+                FilterPipelineNode.TypeAndDomain typeAndDomain = new FilterPipelineNode.TypeAndDomain(name, typeConverter.getType(new SymbolReference(name)), domain);
+                domainMap.put(name, typeAndDomain);
+            });
+            symbolNameToDomains = Optional.of(domainMap.build());
         }
         else {
             symbolNameToDomains = Optional.empty();
@@ -250,6 +258,11 @@ public class TestAresDbQueryGenerator
                 createFilterForExpression(columnHandles, "regionid in (3, 4)", cols("regionid", "city", "secondssinceepoch")),
                 limit(50, true, cols("city"), types(VARCHAR))),
                 String.format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"},\"timeZone\":\"UTC\"}]}", lowSecondsExpected, highSecondsExpected), Optional.of(session));
+        testAQL(pipeline(
+                scan(tableWithRetention, columnHandles),
+                createFilterForExpression(columnHandles, String.format("regionid in (3, 4) and (secondssinceepoch = %d or secondssinceepoch = (%d + 1))", highSecondsExpected - 2, highSecondsExpected - 4), cols("regionid", "city", "secondssinceepoch")),
+                limit(50, true, cols("city"), types(VARCHAR))),
+                String.format("{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"%d\",\"to\":\"%d\"},\"timeZone\":\"UTC\"}]}", highSecondsExpected - 3, highSecondsExpected - 2), Optional.of(session));
     }
 
     @Test
@@ -258,9 +271,14 @@ public class TestAresDbQueryGenerator
         List<ColumnHandle> columnHandles = columnHandles(city, regionId, secondsSinceEpoch);
         testAQL(pipeline(
                 scan(aresdbTable, columnHandles),
-                createFilterForExpression(columnHandles, "regionid in (3, 4) and (secondssinceepoch between 100 and 200) and (secondssinceepoch >= 150 or secondssinceepoch < 300)", cols("regionid", "city", "secondssinceepoch")),
+                createFilterForExpression(columnHandles, "regionid in (3, 4) and ((secondssinceepoch between 100 and 200) and (secondssinceepoch >= 150 or secondssinceepoch < 300))", cols("regionid", "city", "secondssinceepoch")),
                 limit(50, true, cols("city"), types(VARCHAR))),
-                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(((regionId IN (3, 4)) AND ((secondsSinceEpoch >= 100) AND (secondsSinceEpoch <= 200))) AND ((secondsSinceEpoch >= 150) OR (secondsSinceEpoch < 300)))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"200\"}}]}");
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"200\"}}]}");
+        testAQL(pipeline(
+                scan(aresdbTable, columnHandles),
+                createFilterForExpression(columnHandles, "regionid in (3, 4) and ((secondssinceepoch between 100 and 125) or (secondssinceepoch >= 150 and secondssinceepoch < 200))", cols("regionid", "city", "secondssinceepoch")),
+                limit(50, true, cols("city"), types(VARCHAR))),
+                "{\"queries\":[{\"dimensions\":[{\"sqlExpression\":\"city\"},{\"sqlExpression\":\"regionId\"},{\"sqlExpression\":\"secondsSinceEpoch\"}],\"limit\":50,\"measures\":[{\"sqlExpression\":\"1\"}],\"rowFilters\":[\"(regionId IN (3, 4))\",\"(((100 <= secondsSinceEpoch) AND (secondsSinceEpoch <= 125)) OR ((150 <= secondsSinceEpoch) AND (secondsSinceEpoch < 200)))\"],\"table\":\"tbl\",\"timeFilter\":{\"column\":\"secondsSinceEpoch\",\"from\":\"100\",\"to\":\"200\"}}]}");
     }
 
     @Test

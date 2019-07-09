@@ -21,7 +21,6 @@ import com.facebook.presto.spi.pipeline.TableScanPipeline;
 import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.predicate.EquatableValueSet;
 import com.facebook.presto.spi.predicate.Range;
-import com.facebook.presto.spi.predicate.SortedRangeSet;
 import com.facebook.presto.spi.predicate.TupleDomain;
 import com.facebook.presto.spi.predicate.ValueSet;
 import com.facebook.presto.testing.TestingConnectorSession;
@@ -221,52 +220,6 @@ public class TestPinotSplitManager
     }
 
     @Test
-    public void testSingleValueRanges()
-    {
-        Domain domain = com.facebook.presto.spi.predicate.Domain.multipleValues(BIGINT, new ArrayList<>(asList(1L, 10L)));
-
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, "city_id").get().toString(), "city_id IN (1, 10)");
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, "city_id_123").get().toString(), "city_id_123 IN (1, 10)");
-
-        Domain domainSingleValue = com.facebook.presto.spi.predicate.Domain.multipleValues(BIGINT, new ArrayList<>(asList(1L)));
-
-        assertEquals(pinotSplitManager.getColumnPredicate(domainSingleValue, columnCityId, "city_id").get().toString(), "(city_id = 1)");
-        assertEquals(pinotSplitManager.getColumnPredicate(domainSingleValue, columnCityId, "city_id_123").get().toString(), "(city_id_123 = 1)");
-    }
-
-    @Test
-    public void testRangeValues()
-    {
-        Domain domain = Domain.create(ValueSet.ofRanges(
-                Range.greaterThan(BIGINT, 1L).intersect(Range.lessThan(BIGINT, 10L))), false);
-
-        String expectedFilter = "((1 < city_id) AND (city_id < 10))";
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, columnCityId.getColumnName()).get().toString(), expectedFilter);
-    }
-
-    @Test
-    public void testOneSideRanges()
-    {
-        Domain domain = Domain.create(ValueSet.ofRanges(
-                Range.lessThanOrEqual(BIGINT, 10L)), false);
-
-        String expectedFilter = "(city_id <= 10)";
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, columnCityId.getColumnName()).get().toString(), expectedFilter);
-    }
-
-    @Test
-    public void testMultipleRanges()
-    {
-        Domain domain = Domain.create(ValueSet.ofRanges(
-                Range.equal(BIGINT, 20L),
-                Range.greaterThan(BIGINT, 1L).intersect(Range.lessThan(BIGINT, 10L)),
-                Range.greaterThan(BIGINT, 12L).intersect(Range.lessThan(BIGINT, 18L))), false);
-
-        String expectedFilter = "(((1 < city_id) AND (city_id < 10)) OR (((12 < city_id) AND (city_id < 18)) OR (city_id = 20)))";
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, columnCityId.getColumnName()).get().toString(), expectedFilter);
-    }
-
-    @Test
     public void testMultipleColumns()
     {
         Domain domain1 = Domain.create(ValueSet.ofRanges(
@@ -331,14 +284,5 @@ public class TestPinotSplitManager
 
         String expectedFilter = "((city_id < 1) OR (((1 < city_id) AND (city_id < 10)) OR (10 < city_id)))";
         assertEquals(pinotSplitManager.getPredicate(constraintSummary, columnAliasMap).toString(), expectedFilter);
-    }
-
-    @Test
-    public void testEmptyDomain()
-    {
-        SortedRangeSet sortedRangeSet = SortedRangeSet.copyOf(BIGINT, new ArrayList<>());
-        Domain domain = Domain.create(sortedRangeSet, false);
-
-        assertEquals(pinotSplitManager.getColumnPredicate(domain, columnCityId, columnCityId.getColumnName()), Optional.empty());
     }
 }

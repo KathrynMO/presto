@@ -20,7 +20,7 @@ import com.facebook.presto.metadata.Metadata;
 import com.facebook.presto.spi.pipeline.FilterPipelineNode;
 import com.facebook.presto.spi.pipeline.PushDownExpression;
 import com.facebook.presto.spi.pipeline.TableScanPipeline;
-import com.facebook.presto.spi.predicate.TupleDomain;
+import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.sql.parser.SqlParser;
 import com.facebook.presto.sql.planner.DomainTranslator;
 import com.facebook.presto.sql.planner.PushDownExpressionGenerator;
@@ -30,8 +30,11 @@ import com.facebook.presto.sql.planner.iterative.Rule;
 import com.facebook.presto.sql.planner.plan.FilterNode;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.sql.tree.Expression;
+import com.facebook.presto.sql.tree.SymbolReference;
+import com.google.common.collect.ImmutableMap;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -117,11 +120,18 @@ public class PushFilterIntoTableScan
 
         DomainTranslator.ExtractionResult extractionResult = DomainTranslator.fromPredicate(metadata, context.getSession(), predicate, context.getSymbolAllocator().getTypes());
         Optional<PushDownExpression> remainingPredicate = Optional.ofNullable(new PushDownExpressionGenerator(typeConverter).process(extractionResult.getRemainingExpression()));
-        Optional<TupleDomain<String>> symbolNameToDomains;
+        Optional<Map<String, FilterPipelineNode.TypeAndDomain>> symbolNameToDomains;
 
         // only do this if the remainingPushdownPredicate is not null
-        if (remainingPredicate.isPresent() && !extractionResult.getTupleDomain().isAll()) {
-            symbolNameToDomains = Optional.of(extractionResult.getTupleDomain().transform(Symbol::getName));
+        if (remainingPredicate.isPresent() && !extractionResult.getTupleDomain().isAll() && extractionResult.getTupleDomain().getDomains().isPresent()) {
+            Map<Symbol, Domain> symbolDomainMap = extractionResult.getTupleDomain().getDomains().get();
+            ImmutableMap.Builder<String, FilterPipelineNode.TypeAndDomain> domainMap = ImmutableMap.builder();
+            symbolDomainMap.forEach((symbol, domain) -> {
+                String name = symbol.getName();
+                FilterPipelineNode.TypeAndDomain typeAndDomain = new FilterPipelineNode.TypeAndDomain(name, typeConverter.getType(new SymbolReference(name)), domain);
+                domainMap.put(name, typeAndDomain);
+            });
+            symbolNameToDomains = Optional.of(domainMap.build());
         }
         else {
             symbolNameToDomains = Optional.empty();

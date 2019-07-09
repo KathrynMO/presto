@@ -22,15 +22,16 @@ import com.facebook.presto.aresdb.AresDbSessionProperties;
 import com.facebook.presto.aresdb.AresDbTableHandle;
 import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.pipeline.JoinPipelineNode;
+import com.facebook.presto.spi.pipeline.PushDownExpression;
+import com.facebook.presto.spi.predicate.AllOrNone;
+import com.facebook.presto.spi.predicate.DiscreteValues;
 import com.facebook.presto.spi.predicate.Domain;
-import com.facebook.presto.spi.predicate.Marker;
 import com.facebook.presto.spi.predicate.Range;
-import com.facebook.presto.spi.predicate.SortedRangeSet;
+import com.facebook.presto.spi.predicate.Ranges;
 import com.facebook.presto.spi.predicate.ValueSet;
 import com.facebook.presto.spi.type.TimeZoneKey;
 import com.facebook.presto.spi.type.Type;
 import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -38,6 +39,8 @@ import io.airlift.units.Duration;
 import org.joda.time.DateTimeZone;
 import org.joda.time.chrono.ISOChronology;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -47,9 +50,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_EXPRESSION;
+import static com.facebook.presto.spi.pipeline.PushDownUtils.getColumnPredicate;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -225,7 +230,9 @@ public class AresDbQueryGeneratorContext
         request.put("measures", measuresJson);
         request.put("dimensions", dimensionsJson);
         tzKey.ifPresent(t -> request.put("timeZone", t.getId()));
-        addTimeFilter(session, request, tableHandle.getTimeColumnName().get());
+
+        List<String> filters = new ArrayList<>(this.filters);
+        addTimeFilter(session, request, filters);
 
         if (!filters.isEmpty()) {
             JSONArray filterJson = new JSONArray();
@@ -333,88 +340,156 @@ public class AresDbQueryGeneratorContext
 
     public static class TimeFilterParsed
     {
-        private final Optional<Long> from;
-        private final Optional<Long> to;
+        private final String timeColumnName;
+        private final long from;
+        private final long to;
+        private final Optional<PushDownExpression> extra;
 
-        public TimeFilterParsed(Optional<Long> from, Optional<Long> to)
+        public TimeFilterParsed(String timeColumnName, long from, long to, Optional<PushDownExpression> extra)
         {
+            this.timeColumnName = timeColumnName;
             this.from = from;
             this.to = to;
-        }
-
-        public boolean hasBounds()
-        {
-            // If from is present, then so is to
-            Preconditions.checkState(from.isPresent() == to.isPresent());
-            return from.isPresent();
+            this.extra = extra;
         }
 
         public long getBoundInSeconds()
         {
-            // Only to be called when hasBounds
-            return to.get() - from.get();
+            return to - from;
         }
 
-        public Optional<Long> getFrom()
+        public long getFrom()
         {
             return from;
         }
 
-        public Optional<Long> getTo()
+        public long getTo()
         {
             return to;
         }
+
+        public Optional<PushDownExpression> getExtra()
+        {
+            return extra;
+        }
+
+        public String getTimeColumnName()
+        {
+            return timeColumnName;
+        }
     }
 
-    private static TimeFilterParsed parseTimeDomainFilter(Optional<Domain> timeFilter)
+    private static class TimeDomainConsumerHelper
     {
-        if (timeFilter.map(Domain::isAll).orElse(true)) {
-            return new TimeFilterParsed(Optional.empty(), Optional.empty());
-        }
+        final String timeColumn;
         Optional<Long> from = Optional.empty();
         Optional<Long> to = Optional.empty();
-        ValueSet values = timeFilter.get().getValues();
-        if (values.isSingleValue()) {
-            from = objectToTimeLiteral(values.getSingleValue(), true);
-            to = objectToTimeLiteral(values.getSingleValue(), false);
+        boolean none;
+        boolean needsRowFilter;
+
+        public TimeDomainConsumerHelper(String timeColumn)
+        {
+            this.timeColumn = timeColumn;
         }
-        else if (values instanceof SortedRangeSet) {
-            Range span = ((SortedRangeSet) values).getSpan();
-            if (!span.getLow().isLowerUnbounded()) {
-                from = objectToTimeLiteral(span.getLow().getValue(), true);
+
+        void consumeRanges(Ranges ranges)
+        {
+            if (ranges.getRangeCount() == 0) {
+                none = true;
             }
-            if (!span.getHigh().isUpperUnbounded()) {
-                to = objectToTimeLiteral(span.getHigh().getValue(), false);
+            else if (ranges.getRangeCount() == 1) {
+                from = Optional.of(objectToTimeLiteral(ranges.getOrderedRanges().get(0).getLow().getValue(), true));
+                to = Optional.of(objectToTimeLiteral(ranges.getOrderedRanges().get(0).getHigh().getValue(), false));
+            }
+            else if (ranges.getRangeCount() > 1) {
+                Range span = ranges.getSpan();
+                from = span.getLow().isLowerUnbounded() ? Optional.empty() : Optional.of(objectToTimeLiteral(span.getLow().getValue(), true));
+                to = span.getHigh().isUpperUnbounded() ? Optional.empty() : Optional.of(objectToTimeLiteral(span.getHigh().getValue(), false));
+                needsRowFilter = bound() > ranges.getRangeCount();
             }
         }
-        return new TimeFilterParsed(from, to);
+
+        private long bound()
+        {
+            return (to.get() - from.get() + 1);
+        }
+
+        void consumeDiscreteValues(DiscreteValues discreteValues)
+        {
+            List<Object> valuesSorted = discreteValues.getValues().stream().sorted(Comparator.comparingDouble(literal -> ((Number) literal).doubleValue())).collect(toImmutableList());
+            from = Optional.of(objectToTimeLiteral(valuesSorted.get(0), true));
+            to = Optional.of(objectToTimeLiteral(valuesSorted.get(valuesSorted.size() - 1), false));
+            needsRowFilter = bound() > valuesSorted.size();
+        }
+
+        void consumeAllOrNone(AllOrNone allOrNone)
+        {
+            if (!allOrNone.isAll()) {
+                none = true;
+            }
+        }
+
+        public void restrict(Optional<TimeFilterParsed> retentionTime)
+        {
+            if (none || !retentionTime.isPresent()) {
+                return;
+            }
+            long retentionFrom = retentionTime.get().getFrom();
+            long retentionTo = retentionTime.get().getTo();
+            from = Optional.of(from.orElse(retentionFrom));
+            to = Optional.of(to.orElse(retentionTo));
+        }
+
+        public Optional<TimeFilterParsed> get(Supplier<Optional<PushDownExpression>> extraSupplier)
+        {
+            if (from.isPresent() && to.isPresent()) {
+                Optional<PushDownExpression> extra = needsRowFilter ? extraSupplier.get() : Optional.empty();
+                return Optional.of(new TimeFilterParsed(timeColumn, from.get(), to.get(), extra));
+            }
+            else {
+                checkState(!from.isPresent() && !to.isPresent(), String.format("Both from and to should be absent: %s and %s", from, to));
+                return Optional.empty();
+            }
+        }
     }
 
-    private void addTimeFilter(Optional<ConnectorSession> session, JSONObject request, String timeColumn)
+    private void addTimeFilter(Optional<ConnectorSession> session, JSONObject request, List<String> rowFilters)
     {
-        TimeFilterParsed timeFilterParsed = getParsedTimeFilter(session);
-        if (timeFilterParsed.hasBounds()) {
+        getParsedTimeFilter(session).ifPresent(timeFilterParsed -> {
             JSONObject timeFilterJson = new JSONObject();
-            timeFilterJson.put("column", timeColumn);
-            timeFilterJson.put("from", String.format("%d", timeFilterParsed.from.get()));
-            timeFilterJson.put("to", String.format("%d", timeFilterParsed.to.get()));
+            timeFilterJson.put("column", timeFilterParsed.getTimeColumnName());
+            timeFilterJson.put("from", String.format("%d", timeFilterParsed.from));
+            timeFilterJson.put("to", String.format("%d", timeFilterParsed.to));
             request.put("timeFilter", timeFilterJson);
-        }
+            timeFilterParsed.getExtra().ifPresent(extraPd -> rowFilters.add(extraPd.accept(new AresDbExpressionConverter(), selections).getDefinition()));
+        });
     }
 
-    public TimeFilterParsed getParsedTimeFilter(Optional<ConnectorSession> session)
+    public Optional<TimeFilterParsed> getParsedTimeFilter(Optional<ConnectorSession> session)
     {
-        return parseTimeDomainFilter(getTimeFilterOrDefault(session));
+        Optional<TimeFilterParsed> retentionTime = retentionTimeFilter(session, tableHandle);
+        Optional<String> timeColumnName = tableHandle.getTimeColumnName();
+        if (!timeColumnName.isPresent() || timeFilter.map(Domain::isAll).orElse(true)) {
+            return retentionTime;
+        }
+        ValueSet values = timeFilter.get().getValues();
+        String timeColumn = timeColumnName.get();
+        TimeDomainConsumerHelper helper = new TimeDomainConsumerHelper(timeColumn);
+        values.getValuesProcessor().consume(
+                ranges -> helper.consumeRanges(ranges),
+                discreteValues -> helper.consumeDiscreteValues(discreteValues),
+                allOrNone -> helper.consumeAllOrNone(allOrNone));
+        helper.restrict(retentionTime);
+        return helper.get(() -> getColumnPredicate(Domain.create(values, false), BIGINT, timeColumn.toLowerCase(ENGLISH)));
     }
 
-    private static Optional<Long> objectToTimeLiteral(Object literal, boolean isLow)
+    private static long objectToTimeLiteral(Object literal, boolean isLow)
     {
         if (!(literal instanceof Number)) {
-            return Optional.empty();
+            throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, String.format("Expected the tuple domain bound %s to be a number when extracting time bounds", literal));
         }
         double num = ((Number) literal).doubleValue();
-        long numAsLong = (long) (isLow ? Math.floor(num) : Math.ceil(num));
-        return Optional.of(numAsLong);
+        return (long) (isLow ? Math.floor(num) : Math.ceil(num));
     }
 
     private static ISOChronology getChronology(ConnectorSession session)
@@ -438,33 +513,19 @@ public class AresDbQueryGeneratorContext
         }
     }
 
-    private static Optional<Domain> retentionToDefaultTimeFilter(Optional<ConnectorSession> session, AresDbTableHandle tableHandle)
+    private static Optional<TimeFilterParsed> retentionTimeFilter(Optional<ConnectorSession> session, AresDbTableHandle tableHandle)
     {
         Optional<Type> timeStampType = tableHandle.getTimeStampType();
+        Optional<String> timeColumnName = tableHandle.getTimeColumnName();
         Optional<Duration> retention = tableHandle.getRetention();
-        if (!retention.isPresent() || !timeStampType.isPresent() || !session.isPresent()) {
+        if (!timeColumnName.isPresent() || !retention.isPresent() || !timeStampType.isPresent() || !session.isPresent()) {
             return Optional.empty();
         }
         long sessionStartTimeInMs = getSessionStartTimeInMs(session.get());
         long retentionInstantInMs = getChronology(session.get()).seconds().subtract(sessionStartTimeInMs, retention.get().roundTo(TimeUnit.SECONDS));
         long lowTimeSeconds = retentionInstantInMs / 1000; // round down
         long highTimeSeconds = (sessionStartTimeInMs + 999) / 1000; // round up
-
-        return Optional.of(Domain.create(ValueSet.ofRanges(new Range(Marker.above(timeStampType.get(), lowTimeSeconds), Marker.below(timeStampType.get(), highTimeSeconds))), false));
-    }
-
-    public Optional<Domain> getTimeFilterOrDefault(Optional<ConnectorSession> session)
-    {
-        Optional<Domain> defaultTimeFilter = retentionToDefaultTimeFilter(session, tableHandle);
-        if (timeFilter.isPresent() && defaultTimeFilter.isPresent()) {
-            return Optional.of(timeFilter.get().intersect(defaultTimeFilter.get()));
-        }
-        else if (timeFilter.isPresent()) {
-            return timeFilter;
-        }
-        else {
-            return defaultTimeFilter;
-        }
+        return Optional.of(new TimeFilterParsed(timeColumnName.get(), lowTimeSeconds, highTimeSeconds, Optional.empty()));
     }
 
     public AresDbQueryGeneratorContext withJoin(AresDbQueryGeneratorContext otherContext, String otherTableName, List<JoinPipelineNode.EquiJoinClause> criterias)
@@ -494,12 +555,12 @@ public class AresDbQueryGeneratorContext
 
     public boolean isInputTooBig(Optional<ConnectorSession> session)
     {
-        TimeFilterParsed timeFilterParsed = getParsedTimeFilter(session);
-        if (!timeFilterParsed.hasBounds() || !session.isPresent()) {
+        Optional<TimeFilterParsed> timeFilterParsed = getParsedTimeFilter(session);
+        if (!timeFilterParsed.isPresent() || !session.isPresent()) {
             // Assume global tables without retention are small
             return false;
         }
-        return timeFilterParsed.getBoundInSeconds() > AresDbSessionProperties.getSingleSplitLimit(session.get()).roundTo(TimeUnit.SECONDS);
+        return timeFilterParsed.get().getBoundInSeconds() > AresDbSessionProperties.getSingleSplitLimit(session.get()).roundTo(TimeUnit.SECONDS);
     }
 
     public enum Origin

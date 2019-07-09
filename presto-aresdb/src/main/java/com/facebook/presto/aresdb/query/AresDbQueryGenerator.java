@@ -39,6 +39,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,8 @@ import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_EXPR
 import static com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.Origin.DERIVED;
 import static com.facebook.presto.aresdb.query.AresDbQueryGeneratorContext.Origin.TABLE;
 import static com.facebook.presto.spi.pipeline.JoinPipelineNode.JoinType.INNER;
+import static com.facebook.presto.spi.pipeline.PushDownUtils.combineExpressions;
+import static com.facebook.presto.spi.pipeline.PushDownUtils.getColumnPredicate;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.lang.String.format;
@@ -170,25 +173,32 @@ public class AresDbQueryGenerator
     public AresDbQueryGeneratorContext visitFilterNode(FilterPipelineNode filter, AresDbQueryGeneratorContext context)
     {
         requireNonNull(context, "context is null");
-        Optional<Domain> timeFilter;
-        PushDownExpression predicate = filter.getPredicate();
+        Optional<Domain> timeFilter = Optional.empty();
+        Optional<PushDownExpression> predicate = Optional.of(filter.getPredicate());
+        if (context.getTimeColumn().isPresent() && filter.getSymbolNameToDomains().isPresent()) {
+            String timeColumn = context.getTimeColumn().get().toLowerCase(ENGLISH);
+            Map<String, FilterPipelineNode.TypeAndDomain> domainMap = new HashMap<>(filter.getSymbolNameToDomains().get());
+            FilterPipelineNode.TypeAndDomain timeDomain = domainMap.remove(timeColumn);
+            if (timeDomain != null) {
+                timeFilter = Optional.of(timeDomain.getDomain());
+                ImmutableList.Builder<PushDownExpression> remainingPredicateBuilder = ImmutableList.builder();
+                if (filter.getRemainingPredicate().isPresent() && !isBooleanTrue(filter.getRemainingPredicate().get())) {
+                    remainingPredicateBuilder.add(filter.getRemainingPredicate().get());
+                }
+                domainMap.forEach((name, typeAndDomain) -> getColumnPredicate(typeAndDomain.getDomain(), typeAndDomain.getType(), name).ifPresent(remainingPredicateBuilder::add));
+                predicate = combineExpressions(remainingPredicateBuilder.build(), "AND");
+            }
+        }
         List<String> filters;
-        if (isBooleanTrue(predicate)) {
+        if (!predicate.isPresent() || isBooleanTrue(predicate.get())) {
             filters = ImmutableList.of();
         }
         else {
-            String filterPredicate = predicate.accept(new AresDbExpressionConverter(), context.getSelections()).getDefinition();
+            String filterPredicate = predicate.get().accept(new AresDbExpressionConverter(), context.getSelections()).getDefinition();
             if (filterPredicate == null) {
                 throw new AresDbException(ARESDB_UNSUPPORTED_EXPRESSION, String.format("Cannot convert the filter %s", predicate));
             }
             filters = ImmutableList.of(filterPredicate);
-        }
-        if (context.getTimeColumn().isPresent() && filter.getSymbolNameToDomains().isPresent()) {
-            String timeColumn = context.getTimeColumn().get().toLowerCase(ENGLISH);
-            timeFilter = filter.getSymbolNameToDomains().get().getDomains().flatMap(domains -> Optional.ofNullable(domains.get(timeColumn)));
-        }
-        else {
-            timeFilter = Optional.empty();
         }
         return context.withFilters(filters, timeFilter);
     }

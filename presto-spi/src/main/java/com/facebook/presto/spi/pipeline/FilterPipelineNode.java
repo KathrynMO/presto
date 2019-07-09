@@ -13,12 +13,13 @@
  */
 package com.facebook.presto.spi.pipeline;
 
-import com.facebook.presto.spi.predicate.TupleDomain;
+import com.facebook.presto.spi.predicate.Domain;
 import com.facebook.presto.spi.type.Type;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static java.util.Objects.requireNonNull;
@@ -29,7 +30,7 @@ public class FilterPipelineNode
     private final PushDownExpression predicate;
     private final List<String> outputColumns;
     private final List<Type> rowType;
-    private final Optional<TupleDomain<String>> symbolNameToDomains;
+    private final Optional<Map<String, TypeAndDomain>> symbolNameToDomains;
     private final Optional<PushDownExpression> remainingPredicate;
 
     @JsonCreator
@@ -37,7 +38,7 @@ public class FilterPipelineNode
             @JsonProperty("predicate") PushDownExpression predicate,
             @JsonProperty("outputColumns") List<String> outputColumns,
             @JsonProperty("rowType") List<Type> rowType,
-            @JsonProperty("symbolNameToDomains") Optional<TupleDomain<String>> symbolNameToDomains,
+            @JsonProperty("symbolNameToDomains") Optional<Map<String, TypeAndDomain>> symbolNameToDomains,
             @JsonProperty("remainingPredicate") Optional<PushDownExpression> remainingPredicate)
     {
         this.predicate = requireNonNull(predicate, "predicate is null");
@@ -48,7 +49,7 @@ public class FilterPipelineNode
     }
 
     @JsonProperty
-    public Optional<TupleDomain<String>> getSymbolNameToDomains()
+    public Optional<Map<String, TypeAndDomain>> getSymbolNameToDomains()
     {
         return symbolNameToDomains;
     }
@@ -89,5 +90,38 @@ public class FilterPipelineNode
     public <R, C> R accept(TableScanPipelineVisitor<R, C> visitor, C context)
     {
         return visitor.visitFilterNode(this, context);
+    }
+
+    public static class TypeAndDomain
+    {
+        private final String name;
+        private final Type type;
+        private final Domain domain;
+
+        @JsonCreator
+        public TypeAndDomain(@JsonProperty("name") String name, @JsonProperty("type") Type type, @JsonProperty("domain") Domain domain)
+        {
+            this.name = name;
+            this.type = type;
+            this.domain = domain;
+        }
+
+        @JsonProperty
+        public String getName()
+        {
+            return name;
+        }
+
+        @JsonProperty
+        public Type getType()
+        {
+            return type;
+        }
+
+        @JsonProperty
+        public Domain getDomain()
+        {
+            return domain;
+        }
     }
 }
