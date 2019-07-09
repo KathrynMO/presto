@@ -31,5 +31,5 @@ applications:
     app_type: command_line
     health_check: neutrino/udeploy_health_check.sh
     command_line:
-      run_cmd: './neutrino/start.sh presto-server/target/presto-server-0.218-SNAPSHOT'
+      run_cmd: './neutrino/start.sh presto-server/target/presto-server-0.218-SNAPSHOT --enable-central-logging'
 

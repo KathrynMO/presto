@@ -197,6 +197,7 @@ def build_java_execution(options, daemon):
     if daemon or options.server_log:
         server_log = realpath(options.server_log or pathjoin(options.data_dir, 'var/log/server.log'))
         properties['log.output-file'] = server_log
+        properties['log.enable-central-logging'] = options.enable_central_logging
         if not options.enable_console:
             properties['log.enable-console'] = 'false'
 
@@ -363,6 +364,7 @@ def create_parser():
     parser.add_option('--pid-file', metavar='FILE', help='Defaults to DATA_DIR/var/run/launcher.pid')
     parser.add_option('--launcher-log-file', metavar='FILE', help='Defaults to DATA_DIR/var/log/launcher.log')
     parser.add_option('--server-log-file', metavar='FILE', help='Defaults to stderr')
+    parser.add_option('--enable-central-logging', action="store_true", default=False)
     parser.add_option('--debug_port', help='defaults to None', default=0, dest='debug_port', type=int)
     parser.add_option('--debug_suspend', action="store_true", dest='debug_suspend')
     parser.add_option('--enable-console', action="store_true", dest='enable_console')
@@ -428,6 +430,7 @@ def main():
     o.config_path = realpath(options.config or pathjoin(o.etc_dir, 'config.properties'))
     o.log_levels = realpath(options.log_levels_file or pathjoin(o.etc_dir, 'log.properties'))
     o.log_levels_set = bool(options.log_levels_file)
+    o.enable_central_logging = options.enable_central_logging
 
     if options.node_config and not exists(o.node_config):
         parser.error('Node config file is missing: %s' % o.node_config)
