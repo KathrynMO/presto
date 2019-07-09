@@ -11,8 +11,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.pinot;
+package com.facebook.presto.rta;
 
+import com.facebook.presto.rta.schema.RTAMSClient;
 import io.airlift.http.client.Request;
 import io.airlift.http.client.StringResponseHandler;
 import io.airlift.stats.CounterStat;
@@ -25,17 +26,15 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.facebook.presto.pinot.PinotUtils.isValidPinotHttpResponseCode;
-
 @ThreadSafe
-public class PinotMetricsStat
+public class RtaMetricsStat
 {
     private final TimeStat time = new TimeStat(TimeUnit.MILLISECONDS);
     private final CounterStat numRequests = new CounterStat();
     private final CounterStat numErrorRequests = new CounterStat();
     private DistributionStat responseSize;
 
-    public PinotMetricsStat(boolean withResponse)
+    public RtaMetricsStat(boolean withResponse)
     {
         if (withResponse) {
             responseSize = new DistributionStat();
@@ -46,10 +45,8 @@ public class PinotMetricsStat
     {
         time.add(duration, timeUnit);
         numRequests.update(1);
-        if (isValidPinotHttpResponseCode(response.getStatusCode())) {
-            if (responseSize != null) {
-                responseSize.add(response.getBody().length());
-            }
+        if (RTAMSClient.isValidResponseCode(response.getStatusCode())) {
+            responseSize.add(response.getBody().length());
         }
         else {
             numErrorRequests.update(1);

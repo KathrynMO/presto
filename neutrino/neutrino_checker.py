@@ -135,15 +135,16 @@ METRICS = [
 {
     "prefix": "presto.sql.planner.optimizations.iterativeoptimizer",
     "mbean_prefix": "com.facebook.presto.sql.planner.iterative:name=IterativeOptimizer"
+},
+{
+    "prefix": "presto.rta.aresdb",
+    "mbean_prefix": "com.facebook.presto.aresdb:type=AresDbMetrics"
+},
+{
+    "prefix": "presto.rta.pinot",
+    "mbean_prefix": "com.facebook.presto.aresdb:type=PinotMetrics"
 }
 ]
-
-# TODO: Keep this list obviously up to date with the catalog
-for pinot_cluster in ["pinotstg", "pinotsandbox", "pinotprod", "pinotadhoc", "pinotphxstg"]:
-    METRICS.append({
-        "prefix": "presto.pinot." + pinot_cluster,
-        "mbean": "com.facebook.presto.pinot:type=PinotMetrics,name=" + pinot_cluster
-        })
 
 def compile_metrics(metrics):
     mbeans = {}

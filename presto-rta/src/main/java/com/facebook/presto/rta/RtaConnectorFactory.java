@@ -19,6 +19,7 @@ import com.facebook.presto.spi.ConnectorHandleResolver;
 import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.ConnectorTableHandle;
 import com.facebook.presto.spi.ConnectorTableLayoutHandle;
+import com.facebook.presto.spi.RebindSafeMBeanServer;
 import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorContext;
 import com.facebook.presto.spi.connector.ConnectorFactory;
@@ -26,13 +27,20 @@ import com.facebook.presto.spi.connector.ConnectorPartitioningHandle;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.type.TypeManager;
 import com.google.inject.Injector;
+import com.google.inject.Scopes;
 import io.airlift.bootstrap.Bootstrap;
 import io.airlift.json.JsonModule;
+import org.weakref.jmx.guice.MBeanModule;
+
+import javax.management.MBeanServer;
 
 import java.util.Map;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
+import static java.lang.management.ManagementFactory.getPlatformMBeanServer;
 import static java.util.Objects.requireNonNull;
+import static org.weakref.jmx.ObjectNames.generatedNameOf;
+import static org.weakref.jmx.guice.ExportBinder.newExporter;
 
 public class RtaConnectorFactory
         implements ConnectorFactory
@@ -93,10 +101,13 @@ public class RtaConnectorFactory
         requireNonNull(config, "config is null");
 
         try {
-            Bootstrap app = new Bootstrap(new JsonModule(), new RtaModule(), binder -> {
+            Bootstrap app = new Bootstrap(new JsonModule(), new MBeanModule(), new RtaModule(), binder -> {
+                binder.bind(MBeanServer.class).toInstance(new RebindSafeMBeanServer(getPlatformMBeanServer()));
                 binder.bind(ConnectorContext.class).toInstance(context);
                 binder.bind(RtaConnectorId.class).toInstance(new RtaConnectorId(catalogName));
                 binder.bind(TypeManager.class).toInstance(context.getTypeManager());
+                binder.bind(RtaMetrics.class).in(Scopes.SINGLETON);
+                newExporter(binder).export(RtaMetrics.class).as(generatedNameOf(RtaMetrics.class, catalogName));
             });
 
             Injector injector = app.strictConfig().doNotInitializeLogging().setRequiredConfigurationProperties(config).initialize();

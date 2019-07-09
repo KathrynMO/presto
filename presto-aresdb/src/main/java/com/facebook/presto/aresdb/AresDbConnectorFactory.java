@@ -21,6 +21,7 @@ import com.facebook.presto.spi.ConnectorSplit;
 import com.facebook.presto.spi.ConnectorTableHandle;
 import com.facebook.presto.spi.ConnectorTableLayoutHandle;
 import com.facebook.presto.spi.NodeManager;
+import com.facebook.presto.spi.RebindSafeMBeanServer;
 import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorContext;
 import com.facebook.presto.spi.connector.ConnectorFactory;
@@ -28,13 +29,20 @@ import com.facebook.presto.spi.connector.ConnectorPartitioningHandle;
 import com.facebook.presto.spi.connector.ConnectorTransactionHandle;
 import com.facebook.presto.spi.type.TypeManager;
 import com.google.inject.Injector;
+import com.google.inject.Scopes;
 import io.airlift.bootstrap.Bootstrap;
 import io.airlift.json.JsonModule;
+import org.weakref.jmx.guice.MBeanModule;
+
+import javax.management.MBeanServer;
 
 import java.util.Map;
 
 import static com.google.common.base.Throwables.throwIfUnchecked;
+import static java.lang.management.ManagementFactory.getPlatformMBeanServer;
 import static java.util.Objects.requireNonNull;
+import static org.weakref.jmx.ObjectNames.generatedNameOf;
+import static org.weakref.jmx.guice.ExportBinder.newExporter;
 
 public class AresDbConnectorFactory
         implements ConnectorFactory
@@ -95,10 +103,13 @@ public class AresDbConnectorFactory
         requireNonNull(config, "config is null");
 
         try {
-            Bootstrap app = new Bootstrap(new JsonModule(), new AresDbModule(), binder -> {
+            Bootstrap app = new Bootstrap(new JsonModule(), new MBeanModule(), new AresDbModule(), binder -> {
+                binder.bind(MBeanServer.class).toInstance(new RebindSafeMBeanServer(getPlatformMBeanServer()));
                 binder.bind(AresDbConnectorId.class).toInstance(new AresDbConnectorId(catalogName));
                 binder.bind(TypeManager.class).toInstance(context.getTypeManager());
                 binder.bind(NodeManager.class).toInstance(context.getNodeManager());
+                binder.bind(AresDbMetrics.class).in(Scopes.SINGLETON);
+                newExporter(binder).export(AresDbMetrics.class).as(generatedNameOf(AresDbMetrics.class, catalogName));
             });
 
             Injector injector = app.strictConfig().doNotInitializeLogging().setRequiredConfigurationProperties(config).initialize();

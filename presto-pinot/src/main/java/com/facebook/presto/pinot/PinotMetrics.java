@@ -28,11 +28,12 @@ import static java.util.Locale.ENGLISH;
 public class PinotMetrics
 {
     // TODO: Is there a way I can have a map<String, Stat> and have that be properly exposed still via jmx with keys as names ?
-    private final PinotMetricsStat getStats = new PinotMetricsStat(true);
+    private final PinotMetricsStat getStats = new PinotMetricsStat(false);
     private final PinotMetricsStat queryStats = new PinotMetricsStat(true);
     private final PinotMetricsStat tablesStats = new PinotMetricsStat(true);
     private final PinotMetricsStat schemaStats = new PinotMetricsStat(true);
-    private final PinotMetricsStat brokerLookupStats = new PinotMetricsStat(false);
+    private final PinotMetricsStat brokerTimeBoundaryStats = new PinotMetricsStat(false);
+    private final PinotMetricsStat brokerRoutingTableStats = new PinotMetricsStat(true);
 
     @Managed
     @Nested
@@ -64,19 +65,22 @@ public class PinotMetrics
 
     @Managed
     @Nested
-    public PinotMetricsStat getBrokerLookupStats()
+    public PinotMetricsStat getBrokerTimeBoundaryStats()
     {
-        return brokerLookupStats;
+        return brokerTimeBoundaryStats;
     }
 
-    public void recordTableToBroker(long timeTaken, TimeUnit timeUnit, boolean encounteredError)
+    @Managed
+    @Nested
+    public PinotMetricsStat getBrokerRoutingTableStats()
     {
-        brokerLookupStats.record(timeTaken, timeUnit, encounteredError);
+        return brokerRoutingTableStats;
     }
 
     public void monitorRequest(Request request, StringResponseHandler.StringResponse response, long duration, TimeUnit timeUnit)
     {
         String[] split = request.getUri().getPath().split("/");
+        String secondLast = split.length >= 2 ? split[split.length - 2].toLowerCase(ENGLISH) : null;
         String last = split[split.length - 1].toLowerCase(ENGLISH);
         if ("post".equalsIgnoreCase(request.getMethod()) && "query".equalsIgnoreCase(last)) {
             queryStats.record(request, response, duration, timeUnit);
@@ -88,6 +92,18 @@ public class PinotMetrics
                     break;
                 case "schema":
                     schemaStats.record(request, response, duration, timeUnit);
+                    break;
+                case "debug":
+                    if (secondLast != null) {
+                        switch (secondLast) {
+                            case "routingtable":
+                                brokerRoutingTableStats.record(request, response, duration, timeUnit);
+                                break;
+                            case "timeboundary":
+                                brokerTimeBoundaryStats.record(request, response, duration, timeUnit);
+                                break;
+                        }
+                    }
             }
             getStats.record(request, response, duration, timeUnit);
         }

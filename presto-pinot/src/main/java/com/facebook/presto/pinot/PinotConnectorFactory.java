@@ -15,6 +15,7 @@ package com.facebook.presto.pinot;
 
 import com.facebook.presto.spi.ConnectorHandleResolver;
 import com.facebook.presto.spi.NodeManager;
+import com.facebook.presto.spi.RebindSafeMBeanServer;
 import com.facebook.presto.spi.connector.Connector;
 import com.facebook.presto.spi.connector.ConnectorContext;
 import com.facebook.presto.spi.connector.ConnectorFactory;

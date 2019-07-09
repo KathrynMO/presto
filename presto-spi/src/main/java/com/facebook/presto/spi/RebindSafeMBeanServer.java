@@ -11,9 +11,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.pinot;
 
-import io.airlift.log.Logger;
+/*
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.facebook.presto.spi;
 
 import javax.annotation.concurrent.ThreadSafe;
 import javax.management.Attribute;
@@ -44,17 +56,13 @@ import java.util.Set;
 /**
  * MBeanServer wrapper that a ignores calls to registerMBean when there is already
  * a MBean registered with the specified object name.
- *
- * Oh, and this is only the FOURTH(!!) copy of this utility class in presto.
- *
- * Copied from Cassandra, Hive, Raptor !.
+ * <p>
+ * This originally existed in hive, raptor and cassandra and I am promoting it to SPI
  */
 @ThreadSafe
 public class RebindSafeMBeanServer
         implements MBeanServer
 {
-    private static final Logger log = Logger.get(RebindSafeMBeanServer.class);
-
     private final MBeanServer mbeanServer;
 
     public RebindSafeMBeanServer(MBeanServer mbeanServer)
@@ -81,7 +89,6 @@ public class RebindSafeMBeanServer
             try {
                 // a mbean is already installed, try to return the already registered instance
                 ObjectInstance objectInstance = mbeanServer.getObjectInstance(name);
-                log.debug("%s already bound to %s", name, objectInstance);
                 return objectInstance;
             }
             catch (InstanceNotFoundException ignored) {

@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.facebook.presto.pinot;
+package com.facebook.presto.aresdb;
 
 import io.airlift.http.client.Request;
 import io.airlift.http.client.StringResponseHandler;
@@ -25,31 +25,38 @@ import javax.annotation.concurrent.ThreadSafe;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.facebook.presto.pinot.PinotUtils.isValidPinotHttpResponseCode;
+import static com.facebook.presto.aresdb.AresDbConnection.isValidAresDbHttpResponseCode;
 
 @ThreadSafe
-public class PinotMetricsStat
+public class AresDbMetricsStat
 {
     private final TimeStat time = new TimeStat(TimeUnit.MILLISECONDS);
     private final CounterStat numRequests = new CounterStat();
     private final CounterStat numErrorRequests = new CounterStat();
     private DistributionStat responseSize;
 
-    public PinotMetricsStat(boolean withResponse)
+    public AresDbMetricsStat(boolean withResponse)
     {
         if (withResponse) {
             responseSize = new DistributionStat();
         }
     }
 
-    public void record(Request request, StringResponseHandler.StringResponse response, long duration, TimeUnit timeUnit)
+    void record(long timeTaken, TimeUnit timeUnit, boolean encounteredError)
+    {
+        time.add(timeTaken, timeUnit);
+        numRequests.update(1);
+        if (encounteredError) {
+            numErrorRequests.update(1);
+        }
+    }
+
+    void record(Request request, StringResponseHandler.StringResponse response, long duration, TimeUnit timeUnit)
     {
         time.add(duration, timeUnit);
         numRequests.update(1);
-        if (isValidPinotHttpResponseCode(response.getStatusCode())) {
-            if (responseSize != null) {
-                responseSize.add(response.getBody().length());
-            }
+        if (isValidAresDbHttpResponseCode(response.getStatusCode())) {
+            responseSize.add(response.getBody().length());
         }
         else {
             numErrorRequests.update(1);

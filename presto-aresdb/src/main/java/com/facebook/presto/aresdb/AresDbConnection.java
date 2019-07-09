@@ -18,6 +18,7 @@ import com.facebook.presto.aresdb.AresDbTable.AresDbColumn;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
+import com.google.common.base.Ticker;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -53,13 +54,16 @@ public class AresDbConnection
 
     private final LoadingCache<String, AresDbTable> aresDbTableCache;
     private final Supplier<List<String>> allTablesCache;
+    private final AresDbMetrics aresDbMetrics;
+    private final Ticker ticker = Ticker.systemTicker();
 
     @Inject
-    public AresDbConnection(AresDbConfig aresDbConfig, @ForAresDb HttpClient httpClient)
+    public AresDbConnection(AresDbConfig aresDbConfig, @ForAresDb HttpClient httpClient, AresDbMetrics aresDbMetrics)
     {
         final long cacheExpiryMs = aresDbConfig.getMetadataCacheExpiry().roundTo(TimeUnit.MILLISECONDS);
         this.aresDbConfig = aresDbConfig;
         this.httpClient = httpClient;
+        this.aresDbMetrics = aresDbMetrics;
 
         this.allTablesCache = Suppliers.memoizeWithExpiration(
                 () -> {
@@ -92,7 +96,7 @@ public class AresDbConnection
                         });
     }
 
-    private static boolean isValidAresDbHttpResponseCode(int status)
+    public static boolean isValidAresDbHttpResponseCode(int status)
     {
         return status >= HTTP_OK && status < HTTP_MULT_CHOICE;
     }
@@ -152,8 +156,17 @@ public class AresDbConnection
             requestBuilder.setHeader(entry.getKey(), entry.getValue());
         }
         Request request = requestBuilder.build();
+        long duration;
+        long startTime = ticker.read();
+        StringResponse stringResponse;
+        try {
+            stringResponse = httpClient.execute(request, createStringResponseHandler());
+        }
+        finally {
+            duration = ticker.read() - startTime;
+        }
 
-        StringResponse stringResponse = httpClient.execute(request, createStringResponseHandler());
+        aresDbMetrics.monitorQueryRequest(request, stringResponse, duration, TimeUnit.NANOSECONDS);
 
         if (isValidAresDbHttpResponseCode(stringResponse.getStatusCode())) {
             return stringResponse.getBody();

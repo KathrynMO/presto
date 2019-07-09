@@ -15,17 +15,20 @@
 package com.facebook.presto.rta.schema;
 
 import com.facebook.presto.rta.RtaConfig;
+import com.facebook.presto.rta.RtaErrorCode;
+import com.facebook.presto.rta.RtaException;
+import com.facebook.presto.rta.RtaMetrics;
+import com.facebook.presto.rta.RtaMetricsStat;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Splitter;
+import com.google.common.base.Ticker;
 import com.google.common.collect.ImmutableList;
-import com.google.common.io.ByteStreams;
 import com.google.common.net.HttpHeaders;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.Request;
-import io.airlift.http.client.Response;
-import io.airlift.http.client.ResponseHandler;
+import io.airlift.http.client.StringResponseHandler;
 
 import javax.inject.Inject;
 
@@ -35,8 +38,10 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
-import static io.airlift.http.client.ResponseHandlerUtils.propagate;
+import static io.airlift.http.client.StringResponseHandler.createStringResponseHandler;
 
 /**
  * This class communicates with the rta-ums (muttley)/rtaums (udeploy) service. It's api is available here:
@@ -49,76 +54,13 @@ public class RTAMSClient
     private static final String MUTTLEY_RPC_SERVICE_HEADER = "Rpc-Service";
     private static final String APPLICATION_JSON = "application/json";
     private static final ObjectMapper mapper = new ObjectMapper();
+    private final Ticker ticker = Ticker.systemTicker();
+    private final Optional<RtaMetrics> rtaMetrics;
 
-    private static ResponseHandler<List<String>, IOException> arrayResponseHandler = new ResponseHandler<List<String>, IOException>()
+    public static boolean isValidResponseCode(int statusCode)
     {
-        @Override
-        public List<String> handleException(Request request, Exception exception)
-        {
-            throw propagate(request, exception);
-        }
-
-        @Override
-        public List<String> handle(Request request, Response response)
-                throws IOException
-        {
-            int status = response.getStatusCode();
-            if (status >= 200 && status < 300) {
-                byte[] entityBytes = ByteStreams.toByteArray(response.getInputStream());
-                String[] namespaces = mapper.readValue(entityBytes, String[].class);
-                return Arrays.asList(namespaces);
-            }
-            else {
-                throw new RuntimeException("Unexpected response status: " + status + ", response: " + response);
-            }
-        }
-    };
-
-    private static ResponseHandler<RTADefinition, IOException> definitionHandler = new ResponseHandler<RTADefinition, IOException>()
-    {
-        @Override
-        public RTADefinition handleException(Request request, Exception exception)
-        {
-            throw propagate(request, exception);
-        }
-
-        @Override
-        public RTADefinition handle(Request request, Response response)
-                throws IOException
-        {
-            int status = response.getStatusCode();
-            if (status >= 200 && status < 300) {
-                byte[] entityBytes = ByteStreams.toByteArray(response.getInputStream());
-                return mapper.readValue(entityBytes, RTADefinition.class);
-            }
-            else {
-                throw new RuntimeException("Unexpected response status for deployment: " + status + ", response: " + response);
-            }
-        }
-    };
-
-    private static ResponseHandler<List<RTADeployment>, IOException> deploymentHandler = new ResponseHandler<List<RTADeployment>, IOException>()
-    {
-        @Override
-        public List<RTADeployment> handleException(Request request, Exception exception)
-        {
-            throw propagate(request, exception);
-        }
-
-        @Override
-        public List<RTADeployment> handle(Request request, Response response)
-                throws IOException
-        {
-            int status = response.getStatusCode();
-            if (status >= 200 && status < 300) {
-                byte[] entityBytes = ByteStreams.toByteArray(response.getInputStream());
-                return mapper.readValue(entityBytes, new TypeReference<List<RTADeployment>>() {});
-            }
-            else {
-                throw new RuntimeException("Unexpected response status for deployment: " + status + ", response: " + response);
-            }
-        }
-    };
+        return statusCode >= 200 && statusCode < 300;
+    }
 
     static {
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -127,10 +69,11 @@ public class RTAMSClient
     private HttpClient httpClient;
     private final String muttleyService;
 
-    private RTAMSClient(HttpClient httpClient, String muttleyRpcServiceValue)
+    private RTAMSClient(HttpClient httpClient, String muttleyService, Optional<RtaMetrics> rtaMetrics)
     {
-        muttleyService = muttleyRpcServiceValue;
+        this.muttleyService = muttleyService;
         this.httpClient = httpClient;
+        this.rtaMetrics = rtaMetrics;
     }
 
     public List<RTADefinition> getExtraDefinitions(String extraDefinitionFiles)
@@ -155,11 +98,15 @@ public class RTAMSClient
         return deployments.build();
     }
 
-    @Inject
-    RTAMSClient(@ForRTAMS HttpClient httpClient, RtaConfig rtaConfig)
-            throws IOException
+    public RTAMSClient(HttpClient httpClient, String rtaMsService)
     {
-        this(httpClient, rtaConfig.getRtaUmsService());
+        this(httpClient, rtaMsService, Optional.empty());
+    }
+
+    @Inject
+    public RTAMSClient(@ForRTAMS HttpClient httpClient, RtaConfig rtaConfig, RtaMetrics rtaMetrics)
+    {
+        this(httpClient, rtaConfig.getRtaUmsService(), Optional.of(rtaMetrics));
     }
 
     Request.Builder getBaseRequest()
@@ -169,28 +116,58 @@ public class RTAMSClient
                 .setHeader(MUTTLEY_RPC_SERVICE_HEADER, muttleyService);
     }
 
+    @FunctionalInterface
+    private static interface ResponseHandler<T>
+    {
+        T call(String body)
+                throws IOException;
+    }
+
+    private <T> T callGet(Optional<RtaMetricsStat> metricsStat, URI uri, ResponseHandler<T> handler)
+            throws IOException
+    {
+        Request request = getBaseRequest().setUri(uri).build();
+        long startTime = ticker.read();
+        long duration;
+        StringResponseHandler.StringResponse response;
+        try {
+            response = httpClient.execute(request, createStringResponseHandler());
+        }
+        finally {
+            duration = ticker.read() - startTime;
+        }
+        String responseBody = response.getBody();
+        metricsStat.ifPresent(p -> p.record(request, response, duration, TimeUnit.NANOSECONDS));
+        if (isValidResponseCode(response.getStatusCode())) {
+            return handler.call(responseBody);
+        }
+        else {
+            throw new RtaException(RtaErrorCode.RTAMS_ERROR,
+                    String.format("Unexpected response status: %d for request GET to url %s, with headers %s, full response %s", response.getStatusCode(), request.getUri(), request.getHeaders(), responseBody));
+        }
+    }
+
     public List<String> getNamespaces()
             throws IOException
     {
-        return httpClient.execute(getBaseRequest().setUri(URI.create(RTAMSEndpoints.getNamespaces())).build(), arrayResponseHandler);
+        return callGet(rtaMetrics.map(RtaMetrics::getNamespacesMetric), URI.create(RTAMSEndpoints.getNamespaces()), response -> Arrays.asList(mapper.readValue(response, String[].class)));
     }
 
     public List<String> getTables(String namespace)
             throws IOException
     {
-        return httpClient.execute(getBaseRequest().setUri(URI.create(RTAMSEndpoints.getTablesFromNamespace(namespace))).build(), arrayResponseHandler);
+        return callGet(rtaMetrics.map(RtaMetrics::getTablesMetric), URI.create(RTAMSEndpoints.getTablesFromNamespace(namespace)), response -> Arrays.asList(mapper.readValue(response, String[].class)));
     }
 
     public RTADefinition getDefinition(final String namespace, final String tableName)
             throws IOException
     {
-        return httpClient.execute(getBaseRequest().setUri(URI.create(RTAMSEndpoints.getTableSchema(namespace, tableName))).build(), definitionHandler);
+        return callGet(rtaMetrics.map(RtaMetrics::getDefinitionMetric), URI.create(RTAMSEndpoints.getTableSchema(namespace, tableName)), response -> mapper.readValue(response, RTADefinition.class));
     }
 
     public List<RTADeployment> getDeployments(final String namespace, final String tableName)
             throws IOException
     {
-        List<RTADeployment> deployments = httpClient.execute(getBaseRequest().setUri(URI.create(RTAMSEndpoints.getDeployment(namespace, tableName))).build(), deploymentHandler);
-        return deployments;
+        return callGet(rtaMetrics.map(RtaMetrics::getDeploymentsMetric), URI.create(RTAMSEndpoints.getDeployment(namespace, tableName)), response -> mapper.readValue(response, new TypeReference<List<RTADeployment>>() {}));
     }
 }

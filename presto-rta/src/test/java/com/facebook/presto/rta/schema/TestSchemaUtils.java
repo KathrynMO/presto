@@ -14,7 +14,6 @@
 
 package com.facebook.presto.rta.schema;
 
-import com.facebook.presto.rta.RtaConfig;
 import com.google.common.collect.ImmutableListMultimap;
 import io.airlift.http.client.HttpClient;
 import io.airlift.http.client.HttpStatus;
@@ -76,7 +75,7 @@ public final class TestSchemaUtils
             return new TestingResponse(status, headers.build(), deploymentOutput);
         });
         client = Mockito.spy(client);
-        RTAMSClient rtamsClient = new RTAMSClient(client, new RtaConfig().setRtaUmsService("rtaums-staging"));
+        RTAMSClient rtamsClient = new RTAMSClient(client, "rtaums-staging");
         return rtamsClient;
     }
 }
