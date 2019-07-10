@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static com.facebook.presto.pinot.PinotUtils.doWithRetries;
 import static com.google.common.base.Preconditions.checkState;
 
 public class PinotBrokerPageSource
@@ -178,25 +179,27 @@ public class PinotBrokerPageSource
     {
         session.getSessionLogger().log(() -> "Pql Issue Start");
 
-        String queryHost;
-        Optional<String> rpcService;
-        if (pinotConfig.getRestProxyUrl() != null) {
-            queryHost = pinotConfig.getRestProxyUrl();
-            rpcService = Optional.ofNullable(pinotConfig.getRestProxyServiceForQuery());
-        }
-        else {
-            queryHost = clusterInfoFetcher.getBrokerHost(table);
-            rpcService = Optional.empty();
-        }
-        Request.Builder builder = Request.Builder
-                .preparePost()
-                .setUri(URI.create(String.format(QUERY_URL_TEMPLATE, queryHost)));
-        String body = clusterInfoFetcher.doHttpActionWithHeaders(builder, Optional.of(String.format(REQUEST_PAYLOAD_TEMPLATE, psql)), rpcService);
-        session.getSessionLogger().log(() -> "Pql Issue End");
+        return doWithRetries(PinotSessionProperties.getPinotRetryCount(session), (retryNumber) -> {
+            String queryHost;
+            Optional<String> rpcService;
+            if (pinotConfig.getRestProxyUrl() != null) {
+                queryHost = pinotConfig.getRestProxyUrl();
+                rpcService = Optional.ofNullable(pinotConfig.getRestProxyServiceForQuery());
+            }
+            else {
+                queryHost = clusterInfoFetcher.getBrokerHost(table);
+                rpcService = Optional.empty();
+            }
+            Request.Builder builder = Request.Builder
+                    .preparePost()
+                    .setUri(URI.create(String.format(QUERY_URL_TEMPLATE, queryHost)));
+            String body = clusterInfoFetcher.doHttpActionWithHeaders(builder, Optional.of(String.format(REQUEST_PAYLOAD_TEMPLATE, psql)), rpcService);
+            session.getSessionLogger().log(() -> "Pql Issue End");
 
-        int rowCount = populateFromPqlResults(psql, numGroupByClause, blockBuilders, types, body);
-        session.getSessionLogger().log(() -> "Pql JSON Parsed");
-        return rowCount;
+            int rowCount = populateFromPqlResults(psql, numGroupByClause, blockBuilders, types, body);
+            session.getSessionLogger().log(() -> "Pql JSON Parsed");
+            return rowCount;
+        });
     }
 
     @VisibleForTesting

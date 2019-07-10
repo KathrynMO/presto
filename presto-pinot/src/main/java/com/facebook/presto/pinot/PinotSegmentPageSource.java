@@ -172,7 +172,7 @@ public class PinotSegmentPageSource
             pinotColumnNameIndexMap.put(columnHandle.getColumnName(), idx++);
         }
 
-        Map<ServerInstance, DataTable> dataTableMap = pinotQueryClient.queryPinotServerForDataTable(split.getPql().get(), split.getSegmentHost().get(), split.getSegments(), PinotSessionProperties.getConnectionTimeout(session));
+        Map<ServerInstance, DataTable> dataTableMap = pinotQueryClient.queryPinotServerForDataTable(split.getPql().get(), split.getSegmentHost().get(), split.getSegments(), PinotSessionProperties.getConnectionTimeout(session), PinotSessionProperties.isIgnoreEmptyResponses(session), PinotSessionProperties.getPinotRetryCount(session));
         dataTableMap.values().stream()
                 // ignore empty tables and tables with 0 rows
                 .filter(table -> table != null && table.getNumberOfRows() > 0)

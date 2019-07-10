@@ -76,6 +76,8 @@ public class PinotConfig
     private boolean scanParallelismEnabled = true;
     private boolean forceSingleNodePlan;
     private int numSegmentsPerSplit = 1;
+    private boolean ignoreEmptyResponses;
+    private int fetchRetryCount = 2;
 
     @NotNull
     public Map<String, String> getExtraHttpHeaders()
@@ -458,6 +460,30 @@ public class PinotConfig
             throw new IllegalArgumentException("Number of segments per split must be more than zero");
         }
         this.numSegmentsPerSplit = numSegmentsPerSplit;
+        return this;
+    }
+
+    public boolean isIgnoreEmptyResponses()
+    {
+        return ignoreEmptyResponses;
+    }
+
+    @Config("ignore-empty-responses")
+    public PinotConfig setIgnoreEmptyResponses(boolean ignoreEmptyResponses)
+    {
+        this.ignoreEmptyResponses = ignoreEmptyResponses;
+        return this;
+    }
+
+    public int getFetchRetryCount()
+    {
+        return fetchRetryCount;
+    }
+
+    @Config("fetch-retry-count")
+    public PinotConfig setFetchRetryCount(int fetchRetryCount)
+    {
+        this.fetchRetryCount = fetchRetryCount;
         return this;
     }
 }

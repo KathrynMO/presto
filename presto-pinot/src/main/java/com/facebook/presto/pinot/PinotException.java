@@ -21,16 +21,23 @@ public class PinotException
         extends PrestoException
 {
     private final Optional<String> pql;
+    private final PinotErrorCode pinotErrorCode;
 
     public PinotException(PinotErrorCode errorCode, Optional<String> pql, String message)
     {
         this(errorCode, pql, message, null);
     }
 
-    public PinotException(PinotErrorCode errorCode, Optional<String> pql, String message, Throwable throwable)
+    public PinotException(PinotErrorCode pinotErrorCode, Optional<String> pql, String message, Throwable throwable)
     {
-        super(errorCode, message, throwable);
+        super(pinotErrorCode, message, throwable);
+        this.pinotErrorCode = pinotErrorCode;
         this.pql = pql;
+    }
+
+    public PinotErrorCode getPinotErrorCode()
+    {
+        return pinotErrorCode;
     }
 
     @Override

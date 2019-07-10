@@ -234,6 +234,9 @@ public class PinotClusterInfoFetcher
                 log.error("Empty routingTableEntries for %s. RoutingTable: %s", tableName, resp.toString());
                 throw new RuntimeException("RoutingTable is empty for " + tableName);
             }
+
+            // We are given multiple routing tables for a table, each with different segment to host assignments
+            // We pick one randomly, so that a retry may hit a different server
             String routingTableEntries = routingTableEntriesArray.getJSONObject(new Random().nextInt(routingTableEntriesArray.size())).toJSONString();
             ImmutableMap.Builder<String, List<String>> routingTableBuilder = ImmutableMap.builder();
             Map<String, List<String>> routingTableEntriesParsed = new ObjectMapper().readValue(routingTableEntries, Map.class);

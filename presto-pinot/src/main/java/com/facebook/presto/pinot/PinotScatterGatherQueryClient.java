@@ -46,6 +46,7 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
@@ -62,6 +63,8 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import static com.facebook.presto.pinot.PinotErrorCode.PINOT_INSUFFICIENT_SERVER_RESPONSE;
 import static com.facebook.presto.pinot.PinotErrorCode.PINOT_INVALID_PQL_GENERATED;
 import static com.facebook.presto.pinot.PinotErrorCode.PINOT_UNCLASSIFIED_ERROR;
+import static com.facebook.presto.pinot.PinotUtils.doWithRetries;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static java.lang.String.format;
 
 public class PinotScatterGatherQueryClient
@@ -126,7 +129,7 @@ public class PinotScatterGatherQueryClient
         return defaultBrokerId;
     }
 
-    public Map<ServerInstance, DataTable> queryPinotServerForDataTable(String pql, String serverHost, List<String> segments, Duration connectionTimeout)
+    public Map<ServerInstance, DataTable> queryPinotServerForDataTable(String pql, String serverHost, List<String> segments, Duration connectionTimeout, boolean ignoreEmptyResponses, int pinotRetryCount)
     {
         BrokerRequest brokerRequest;
         try {
@@ -138,50 +141,46 @@ public class PinotScatterGatherQueryClient
         }
 
         Map<String, List<String>> routingTable = ImmutableMap.of(serverHost, ImmutableList.copyOf(segments));
-        ScatterGatherRequestImpl scatterRequest = new ScatterGatherRequestImpl(brokerRequest, routingTable, 0, connectionTimeout.toMillis(), prestoHostId);
 
-        ScatterGatherStats scatterGatherStats = new ScatterGatherStats();
-        CompositeFuture<byte[]> compositeFuture = routeScatterGather(scatterRequest, scatterGatherStats);
+        // Unfortunately the retries will all hit the same server because the routing decision has already been made by the pinot broker
+        Map<ServerInstance, byte[]> serverResponseMap = doWithRetries(pinotRetryCount, (requestId) -> {
+            ScatterGatherRequestImpl scatterRequest = new ScatterGatherRequestImpl(brokerRequest, routingTable, requestId, connectionTimeout.toMillis(), prestoHostId);
 
-        if (compositeFuture == null) {
-            // No server found in either OFFLINE or REALTIME table.
-            throw new PinotException(PINOT_UNCLASSIFIED_ERROR, Optional.of(pql), format("Failed to send read request to %s", serverHost));
-        }
+            ScatterGatherStats scatterGatherStats = new ScatterGatherStats();
+            CompositeFuture<byte[]> compositeFuture = routeScatterGather(scatterRequest, scatterGatherStats);
 
-        Map<ServerInstance, DataTable> dataTableMap = new HashMap<>();
+            if (compositeFuture == null) {
+                // No server found in either OFFLINE or REALTIME table.
+                throw new PinotException(PINOT_UNCLASSIFIED_ERROR, Optional.of(pql), format("Failed to send read request to %s", serverHost));
+            }
 
-        Map<ServerInstance, byte[]> serverResponseMap = gatherServerResponses(pql, routingTable.size(), compositeFuture, scatterGatherStats, true, brokerRequest.getQuerySource().getTableName());
-        deserializeServerResponses(pql, serverResponseMap, true, dataTableMap, brokerRequest.getQuerySource().getTableName());
-        return dataTableMap;
+            return gatherServerResponses(pql, ignoreEmptyResponses, routingTable, compositeFuture, scatterGatherStats, true, brokerRequest.getQuerySource().getTableName());
+        });
+        return deserializeServerResponses(pql, serverResponseMap, true, brokerRequest.getQuerySource().getTableName());
     }
 
-    /**
-     * Gather responses from servers, append processing exceptions to the processing exception list passed in.
-     *
-     * @param compositeFuture composite future returned from scatter phase.
-     * @param scatterGatherStats scatter-gather statistics.
-     * @param isOfflineTable whether the scatter-gather target is an OFFLINE table.
-     * @param tableNameWithType table name with type suffix.
-     * @return server response map.
-     */
     @Nullable
     private Map<ServerInstance, byte[]> gatherServerResponses(
             String pql,
-            int numResponsesExpected,
+            boolean ignoreEmptyResponses,
+            Map<String, List<String>> routingTable,
             @Nonnull CompositeFuture<byte[]> compositeFuture,
             @Nonnull ScatterGatherStats scatterGatherStats, boolean isOfflineTable,
             @Nonnull String tableNameWithType)
     {
         try {
             Map<ServerInstance, byte[]> serverResponseMap = compositeFuture.get();
-            if (serverResponseMap.size() != numResponsesExpected) {
-                throw new PinotException(PINOT_INSUFFICIENT_SERVER_RESPONSE, Optional.of(pql), String.format("%d of %d servers responded", serverResponseMap.size(), numResponsesExpected));
-            }
-            Iterator<Map.Entry<ServerInstance, byte[]>> iterator = serverResponseMap.entrySet().iterator();
-            while (iterator.hasNext()) {
-                Map.Entry<ServerInstance, byte[]> entry = iterator.next();
-                if (entry.getValue().length == 0) {
-                    throw new PinotException(PINOT_INSUFFICIENT_SERVER_RESPONSE, Optional.of(pql), String.format("Got empty response from server: %s", entry.getKey().getShortHostName()));
+            if (!ignoreEmptyResponses) {
+                if (serverResponseMap.size() != routingTable.size()) {
+                    Map<String, Serializable> routingTableForLogging = routingTable.entrySet().stream().collect(toImmutableMap(Map.Entry::getKey, entry -> entry.getValue().size() > 10 ? format("%d segments", entry.getValue().size()) : ImmutableList.copyOf(entry.getValue())));
+                    throw new PinotException(PINOT_INSUFFICIENT_SERVER_RESPONSE, Optional.of(pql), String.format("%d of %d servers responded, routing table servers: %s, error: %s", serverResponseMap.size(), routingTable.size(), routingTableForLogging, ImmutableMap.copyOf(compositeFuture.getError())));
+                }
+                Iterator<Map.Entry<ServerInstance, byte[]>> iterator = serverResponseMap.entrySet().iterator();
+                while (iterator.hasNext()) {
+                    Map.Entry<ServerInstance, byte[]> entry = iterator.next();
+                    if (entry.getValue().length == 0) {
+                        throw new PinotException(PINOT_INSUFFICIENT_SERVER_RESPONSE, Optional.of(pql), String.format("Got empty response from server: %s", entry.getKey().getShortHostName()));
+                    }
                 }
             }
             Map<ServerInstance, Long> responseTimes = compositeFuture.getResponseTimes();
@@ -202,27 +201,32 @@ public class PinotScatterGatherQueryClient
      *
      * @param responseMap map from server to response.
      * @param isOfflineTable whether the responses are from an OFFLINE table.
-     * @param dataTableMap map from server to data table.
      * @param tableNameWithType table name with type suffix.
+     * @return dataTableMap map from server to data table.
      */
-    private void deserializeServerResponses(
+    private Map<ServerInstance, DataTable> deserializeServerResponses(
             String pql,
             @Nonnull Map<ServerInstance, byte[]> responseMap, boolean isOfflineTable,
-            @Nonnull Map<ServerInstance, DataTable> dataTableMap,
             @Nonnull String tableNameWithType)
     {
+        Map<ServerInstance, DataTable> dataTableMap = new HashMap<>();
         for (Map.Entry<ServerInstance, byte[]> entry : responseMap.entrySet()) {
             ServerInstance serverInstance = entry.getKey();
+            byte[] value = entry.getValue();
+            if (value == null || value.length == 0) {
+                continue;
+            }
             if (!isOfflineTable) {
                 serverInstance = serverInstance.withSeq(1);
             }
             try {
-                dataTableMap.put(serverInstance, DataTableFactory.getDataTable(entry.getValue()));
+                dataTableMap.put(serverInstance, DataTableFactory.getDataTable(value));
             }
             catch (IOException e) {
                 throw new PinotException(PINOT_UNCLASSIFIED_ERROR, Optional.of(pql), String.format("Caught exceptions while deserializing response for table: %s from server: %s", tableNameWithType, serverInstance), e);
             }
         }
+        return dataTableMap;
     }
 
     private CompositeFuture<byte[]> routeScatterGather(ScatterGatherRequestImpl scatterRequest, ScatterGatherStats scatterGatherStats)

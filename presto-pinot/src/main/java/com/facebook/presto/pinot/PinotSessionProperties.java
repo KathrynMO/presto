@@ -24,6 +24,7 @@ import javax.inject.Inject;
 import java.util.List;
 
 import static com.facebook.presto.spi.session.PropertyMetadata.booleanProperty;
+import static com.facebook.presto.spi.session.PropertyMetadata.integerProperty;
 import static com.facebook.presto.spi.type.IntegerType.INTEGER;
 import static com.facebook.presto.spi.type.VarcharType.createUnboundedVarcharType;
 
@@ -33,6 +34,8 @@ public class PinotSessionProperties
     private static final String NUM_SEGMENTS_PER_SPLIT = "num_segments_per_split";
     private static final String CONNECTION_TIMEOUT = "connection_timeout";
     private static final String SCAN_PARALLELISM_ENABLED = "scan_parallelism_enabled";
+    private static final String IGNORE_EMPTY_RESPONSES = "ignore_empty_responses";
+    private static final String RETRY_COUNT = "retry_count";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -56,6 +59,16 @@ public class PinotSessionProperties
         return session.getProperty(CONNECTION_TIMEOUT, Duration.class);
     }
 
+    public static boolean isIgnoreEmptyResponses(ConnectorSession session)
+    {
+        return session.getProperty(IGNORE_EMPTY_RESPONSES, Boolean.class);
+    }
+
+    public static int getPinotRetryCount(ConnectorSession session)
+    {
+        return session.getProperty(RETRY_COUNT, Integer.class);
+    }
+
     @Inject
     public PinotSessionProperties(PinotConfig pinotConfig)
     {
@@ -69,6 +82,15 @@ public class PinotSessionProperties
                         SCAN_PARALLELISM_ENABLED,
                         "Scan Parallelism enabled",
                         pinotConfig.isScanParallelismEnabled(),
+                        false),
+                booleanProperty(
+                        IGNORE_EMPTY_RESPONSES,
+                        "Ignore empty or missing pinot server responses",
+                        pinotConfig.isIgnoreEmptyResponses(),
+                        false),
+                integerProperty(RETRY_COUNT,
+                        "Retry count for retriable pinot data fetch calls",
+                        pinotConfig.getFetchRetryCount(),
                         false),
                 new PropertyMetadata<>(
                         CONNECTION_TIMEOUT,

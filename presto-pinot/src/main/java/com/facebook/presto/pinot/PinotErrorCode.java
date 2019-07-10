@@ -25,7 +25,7 @@ public enum PinotErrorCode
 {
     PINOT_UNSUPPORTED_COLUMN_TYPE(0, EXTERNAL), // schema issues
     PINOT_QUERY_GENERATOR_FAILURE(1, INTERNAL_ERROR), // Accepted a query whose pql we couldn't generate
-    PINOT_INSUFFICIENT_SERVER_RESPONSE(2, EXTERNAL), // numServersResponded < numServersQueried
+    PINOT_INSUFFICIENT_SERVER_RESPONSE(2, EXTERNAL, true), // numServersResponded < numServersQueried
     PINOT_EXCEPTION(3, EXTERNAL), // Exception reported by pinot
     PINOT_HTTP_ERROR(4, EXTERNAL), // Some non okay http error code
     PINOT_UNEXPECTED_RESPONSE(5, EXTERNAL), // Invalid json response with okay http return code
@@ -43,10 +43,22 @@ public enum PinotErrorCode
      */
 
     private final ErrorCode errorCode;
+    private final boolean retriable;
+
+    PinotErrorCode(int code, ErrorType type, boolean retriable)
+    {
+        errorCode = new ErrorCode(code + 0x0505_0000, name(), type);
+        this.retriable = retriable;
+    }
 
     PinotErrorCode(int code, ErrorType type)
     {
-        errorCode = new ErrorCode(code + 0x0505_0000, name(), type);
+        this(code, type, false);
+    }
+
+    public boolean isRetriable()
+    {
+        return retriable;
     }
 
     @Override

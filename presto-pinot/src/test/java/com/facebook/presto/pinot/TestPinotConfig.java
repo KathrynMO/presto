@@ -54,6 +54,8 @@ public class TestPinotConfig
                         .setRestProxyUrl(null)
                         .setForceSingleNodePlan(false)
                         .setNumSegmentsPerSplit(1)
+                        .setFetchRetryCount(2)
+                        .setIgnoreEmptyResponses(false)
                         .setLimitPushDownEnabled(true));
     }
 
@@ -88,6 +90,8 @@ public class TestPinotConfig
                 .put("rest-proxy-service-for-query", "upinot-rest-proxy-staging")
                 .put("force-single-node-plan", "true")
                 .put("num-segments-per-split", "2")
+                .put("ignore-empty-responses", "true")
+                .put("fetch-retry-count", "3")
                 .build();
 
         PinotConfig expected = new PinotConfig()
@@ -117,6 +121,8 @@ public class TestPinotConfig
                 .setRestProxyServiceForQuery("upinot-rest-proxy-staging")
                 .setForceSingleNodePlan(true)
                 .setNumSegmentsPerSplit(2)
+                .setIgnoreEmptyResponses(true)
+                .setFetchRetryCount(3)
                 .setLimitPushDownEnabled(false);
 
         ConfigAssertions.assertFullMapping(properties, expected);

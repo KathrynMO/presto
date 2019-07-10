@@ -13,6 +13,10 @@
  */
 package com.facebook.presto.pinot;
 
+import com.google.common.base.Preconditions;
+
+import java.util.function.Function;
+
 import static com.google.common.base.Preconditions.checkArgument;
 import static java.lang.String.format;
 import static java.net.HttpURLConnection.HTTP_MULT_CHOICE;
@@ -36,5 +40,25 @@ public class PinotUtils
         }
         checkArgument(target.isInstance(value), "%s must be of type %s, not %s", name, target.getName(), value.getClass().getName());
         return target.cast(value);
+    }
+
+    public static <T> T doWithRetries(int numRetries, Function<Integer, T> caller)
+    {
+        PinotException firstError = null;
+        Preconditions.checkState(numRetries > 0, "Invalid num of retries %d", numRetries);
+        for (int i = 0; i < numRetries; ++i) {
+            try {
+                return caller.apply(i);
+            }
+            catch (PinotException e) {
+                if (firstError == null) {
+                    firstError = e;
+                }
+                if (!e.getPinotErrorCode().isRetriable()) {
+                    throw e;
+                }
+            }
+        }
+        throw firstError;
     }
 }
