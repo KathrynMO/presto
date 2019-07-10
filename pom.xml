@@ -1346,6 +1346,12 @@
 
     <profiles>
         <profile>
+            <id>neutrino</id>
+            <modules>
+                <module>presto-server-neutrino</module>
+            </modules>
+        </profile>
+        <profile>
             <id>tests-with-dependencies</id>
             <!--
                 Assembles an uber (fat) jar that includes the entire "test" scope classpath for a module.

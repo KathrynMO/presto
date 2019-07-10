@@ -1,0 +1,52 @@
+<runtime>
+    <!-- Target -->
+    <archive name="${project.artifactId}-${project.version}.tar.gz" />
+
+    <!-- Notices -->
+    <fileSet to="/">
+        <directory path="${basedir}">
+            <include>NOTICE</include>
+            <include>README.txt</include>
+        </directory>
+    </fileSet>
+
+    <!-- Launcher -->
+    <artifactSet to="bin">
+        <artifact id="io.airlift:launcher:tar.gz:bin:${dep.packaging.version}">
+            <unpack />
+        </artifact>
+        <artifact id="io.airlift:launcher:tar.gz:properties:${dep.packaging.version}">
+            <unpack filter="true" />
+        </artifact>
+    </artifactSet>
+
+    <!-- Server -->
+    <artifactSet to="lib">
+        <artifact id="${project.groupId}:presto-main:${project.version}" />
+    </artifactSet>
+
+    <!-- Plugins -->
+    <artifactSet to="plugin/pinot">
+        <artifact id="${project.groupId}:presto-pinot-plugin:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/aresdb">
+        <artifact id="${project.groupId}:presto-aresdb-plugin:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/rta">
+        <artifact id="${project.groupId}:presto-rta:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+
+    <artifactSet to="plugin/presto-event-listener">
+        <artifact id="${project.groupId}:presto-event-listener:zip:${project.version}">
+            <unpack />
+        </artifact>
+    </artifactSet>
+</runtime>
