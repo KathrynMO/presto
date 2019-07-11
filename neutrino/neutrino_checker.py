@@ -143,6 +143,10 @@ METRICS = [
 {
     "prefix": "presto.rta.pinot",
     "mbean_prefix": "com.facebook.presto.aresdb:type=PinotMetrics"
+},
+{
+    "prefix": "presto.rta.rta",
+    "mbean_prefix": "com.facebook.presto.rta:type=RtaMetrics"
 }
 ]
 
