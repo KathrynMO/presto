@@ -615,10 +615,6 @@ public class HiveMetadata
     @Override
     public Map<NestedColumn, ColumnHandle> getNestedColumnHandles(ConnectorSession session, ConnectorTableHandle tableHandle, Collection<NestedColumn> nestedColumns)
     {
-        if (!HiveSessionProperties.isStatisticsEnabled(session)) {
-            return ImmutableMap.of();
-        }
-
         SchemaTableName tableName = schemaTableName(tableHandle);
         Optional<Table> table = metastore.getTable(tableName.getSchemaName(), tableName.getTableName());
 
