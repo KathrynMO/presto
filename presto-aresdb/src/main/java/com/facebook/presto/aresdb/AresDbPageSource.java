@@ -37,10 +37,9 @@ import com.facebook.presto.spi.type.TimestampWithTimeZoneType;
 import com.facebook.presto.spi.type.TinyintType;
 import com.facebook.presto.spi.type.Type;
 import com.facebook.presto.spi.type.VarcharType;
-import com.google.common.base.Preconditions;
+import com.google.common.base.Throwables;
 import com.google.common.cache.Cache;
 import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import io.airlift.log.Logger;
 import io.airlift.slice.Slice;
@@ -50,16 +49,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNEXPECTED_ERROR;
 import static com.facebook.presto.aresdb.AresDbErrorCode.ARESDB_UNSUPPORTED_OUTPUT_TYPE;
 import static com.facebook.presto.spi.type.DateTimeEncoding.packDateTimeWithZone;
-import static java.util.Objects.requireNonNull;
 
 public class AresDbPageSource
         implements ConnectorPageSource
@@ -71,14 +67,27 @@ public class AresDbPageSource
     private final AresDbConnection aresDbConnection;
     private final ConnectorSession session;
     private final Cache<AugmentedAQL, Page> cache;
-    private final LinkedBlockingQueue<PageOrError> pages;
-    private AtomicBoolean fetched = new AtomicBoolean(false);
-    private final ExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final List<Page> cachedPages;
+    private final List<Future<AqlResponse>> aqlResponses;
 
     // state information
     private int pagesConsumed;
     private long readTimeNanos;
     private long completedBytes;
+
+    private static class AqlResponse
+    {
+        private final AugmentedAQL request;
+        private final String response;
+        private final boolean cacheable;
+
+        public AqlResponse(AugmentedAQL request, String response, boolean cacheable)
+        {
+            this.request = request;
+            this.response = response;
+            this.cacheable = cacheable;
+        }
+    }
 
     public AresDbPageSource(AresDbSplit aresDbSplit, List<AresDbColumnHandle> columns, AresDbConnection aresDbConnection, ConnectorSession session, Cache<AugmentedAQL, Page> cache)
     {
@@ -87,66 +96,40 @@ public class AresDbPageSource
         this.aresDbConnection = aresDbConnection;
         this.session = session;
         this.cache = cache;
-        this.pages = new LinkedBlockingQueue<>(this.aresDbSplit.getAqls().size());
+        ImmutableList.Builder<Page> cachedPages = ImmutableList.builder();
+        ImmutableList.Builder<Future<AqlResponse>> aqlResponses = ImmutableList.builder();
+        fetch(cachedPages, aqlResponses);
+        this.cachedPages = cachedPages.build();
+        this.aqlResponses = aqlResponses.build();
+        session.getSessionLogger().log(() -> String.format("Ares start split", aresDbSplit.getIndex()));
     }
 
-    private static class PageOrError
+    private Page getPageFromAqlResponse(AqlResponse response)
     {
-        private final Page page;
-        private final String aql;
-        private final Throwable error;
-
-        public PageOrError(Page page, String aql, Throwable error)
-        {
-            this.page = page;
-            this.aql = requireNonNull(aql);
-            this.error = error;
-            Preconditions.checkState(page != null ^ error != null);
+        Page page = buildPage(response.request.getAql(), response.response);
+        if (response.cacheable) {
+            cache.put(response.request, page);
         }
+        return page;
     }
 
-    public void fetchIfNeeded()
+    private void fetch(ImmutableList.Builder<Page> cachedPagesBuilder, ImmutableList.Builder<Future<AqlResponse>> aqlResponses)
     {
-        if (fetched.compareAndSet(false, true)) {
-            for (int i = 0; i < aresDbSplit.getAqls().size(); ++i) {
-                AresDbSplit.AresQL aresQL = aresDbSplit.getAqls().get(i);
-                String aql = aresQL.getAql();
-                boolean miss = true;
-                AugmentedAQL augmentedAQL = new AugmentedAQL(aql, aresDbSplit.getExpressions());
-                if (aresQL.isCacheable()) {
-                    Page cachedPage = this.cache.getIfPresent(augmentedAQL);
-                    if (cachedPage != null) {
-                        log.debug("Got hit for %s", i);
-                        this.pages.offer(new PageOrError(cachedPage, aql, null));
-                        miss = false;
-                    }
-                }
-                if (miss) {
-                    log.debug("Fetching %s %s", aql, i);
-                    Futures.addCallback(
-                            this.aresDbConnection.queryAndGetResultsAsync(aql, i, session),
-                            new FutureCallback<String>()
-                            {
-                                @Override
-                                public void onSuccess(String response)
-                                {
-                                    Page page = buildPage(aql, response);
-                                    if (aresQL.isCacheable()) {
-                                        cache.put(augmentedAQL, page);
-                                    }
-                                    pages.offer(new PageOrError(page, aql, null));
-                                }
-
-                                @Override
-                                public void onFailure(Throwable error)
-                                {
-                                    pages.offer(new PageOrError(null, aql, error));
-                                }
-                            },
-                            executor);
+        for (int i = 0; i < aresDbSplit.getAqls().size(); ++i) {
+            AresDbSplit.AresQL aresQL = aresDbSplit.getAqls().get(i);
+            String aql = aresQL.getAql();
+            boolean miss = true;
+            AugmentedAQL augmentedAQL = new AugmentedAQL(aql, aresDbSplit.getExpressions());
+            if (aresQL.isCacheable()) {
+                Page cachedPage = cache.getIfPresent(augmentedAQL);
+                if (cachedPage != null) {
+                    cachedPagesBuilder.add(cachedPage);
+                    miss = false;
                 }
             }
-            pagesConsumed = 0;
+            if (miss) {
+                aqlResponses.add(Futures.transform(aresDbConnection.queryAndGetResultsAsync(aql, i, aresDbSplit.getIndex(), session), response -> new AqlResponse(augmentedAQL, response, aresQL.isCacheable())));
+            }
         }
     }
 
@@ -281,32 +264,34 @@ public class AresDbPageSource
     @Override
     public boolean isFinished()
     {
-        return pagesConsumed >= this.aresDbSplit.getAqls().size();
+        return pagesConsumed >= aresDbSplit.getAqls().size();
     }
 
     @Override
     public Page getNextPage()
     {
-        fetchIfNeeded();
         if (isFinished()) {
             return null;
         }
 
         long start = System.nanoTime();
-        session.getSessionLogger().log(() -> "Ares getNextPage start " + pagesConsumed);
+        session.getSessionLogger().log(() -> String.format("Ares getNextPage start %d of split %d", pagesConsumed, aresDbSplit.getIndex()));
         try {
-            PageOrError pageOrError = pages.take();
-            if (pageOrError.error != null) {
-                throw new AresDbException(ARESDB_UNEXPECTED_ERROR, "Encountered error on aql " + pageOrError.aql, pageOrError.error);
+            if (pagesConsumed < cachedPages.size()) {
+                return cachedPages.get(pagesConsumed);
             }
-            log.debug("Took page %s", pagesConsumed);
-            return pageOrError.page;
+
+            return getPageFromAqlResponse(aqlResponses.get(pagesConsumed - cachedPages.size()).get());
         }
         catch (InterruptedException e) {
-            throw new AresDbException(ARESDB_UNEXPECTED_ERROR, "Error when polling for page", e);
+            throw new AresDbException(ARESDB_UNEXPECTED_ERROR, "Interrupted", e);
+        }
+        catch (ExecutionException e) {
+            Throwables.propagateIfPossible(e.getCause());
+            throw new AresDbException(ARESDB_UNEXPECTED_ERROR, "Unexpected error", e.getCause());
         }
         finally {
-            session.getSessionLogger().log(() -> "Ares getNextPage end " + pagesConsumed);
+            session.getSessionLogger().log(() -> String.format("Ares getNextPage end %d of split %d", pagesConsumed, aresDbSplit.getIndex()));
             readTimeNanos += System.nanoTime() - start;
             ++pagesConsumed;
         }
@@ -339,7 +324,6 @@ public class AresDbPageSource
                     setValue(types.get(outputIdx), blockBuilders.get(outputIdx), row.get(columnIdx), outputInfo);
                 }
             }
-            session.getSessionLogger().log(() -> "Aql JSON Parsed");
             return numRows;
         }
         else {
@@ -353,13 +337,13 @@ public class AresDbPageSource
                 JSONObject groupByResult = resultsJson.getJSONObject(entryIdx);
                 rowIndex = parserGroupByObject(groupByResult, currentRow, outputInfos, blockBuilders, types, 0, rowIndex);
             }
-            session.getSessionLogger().log(() -> "Aql JSON Parsed");
             return rowIndex;
         }
     }
 
     private Page buildPage(String aql, String response)
     {
+        session.getSessionLogger().log(() -> "Building page from AQL");
         List<Type> expectedTypes = columns.stream().map(AresDbColumnHandle::getDataType).collect(Collectors.toList());
         PageBuilder pageBuilder = new PageBuilder(expectedTypes);
         List<AresDbOutputInfo> outputInfos = AresDbQueryGeneratorContext.getIndicesMappingFromAresDbSchemaToPrestoSchema(aresDbSplit.getExpressions(), columns);
@@ -373,7 +357,9 @@ public class AresDbPageSource
 
         int rowCount = populatePage(aql, response, columnBlockBuilders.build(), columnTypesBuilder.build(), outputInfos);
         pageBuilder.declarePositions(rowCount);
-        return pageBuilder.build();
+        Page page = pageBuilder.build();
+        session.getSessionLogger().log(() -> "End building page from AQL");
+        return page;
     }
 
     private int parserGroupByObject(Object output, List<Object> valuesSoFar, List<AresDbOutputInfo> outputInfos, List<BlockBuilder> blockBuilders, List<Type> types, int startingColumnIndex, int currentRowNumber)
@@ -421,7 +407,7 @@ public class AresDbPageSource
     @Override
     public void close()
     {
-        pagesConsumed = this.aresDbSplit.getAqls().size();
-        executor.shutdownNow();
+        pagesConsumed = aresDbSplit.getAqls().size();
+        session.getSessionLogger().log(() -> String.format("Ares end split", aresDbSplit.getIndex()));
     }
 }

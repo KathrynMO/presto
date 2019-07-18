@@ -142,7 +142,7 @@ public class AresDbConnection
         }
     }
 
-    public ListenableFuture<String> queryAndGetResultsAsync(String aql, int index, ConnectorSession session)
+    public ListenableFuture<String> queryAndGetResultsAsync(String aql, int aqlindex, int splitIndex, ConnectorSession session)
     {
         Request.Builder requestBuilder = Request.builder()
                 .prepareGet()
@@ -158,11 +158,11 @@ public class AresDbConnection
         }
         Request request = requestBuilder.build();
         long startTime = ticker.read();
-        session.getSessionLogger().log(() -> "Aql Issue Start " + index);
+        session.getSessionLogger().log(() -> String.format("Aql Issue Start %d of split %d", aqlindex, splitIndex));
         return Futures.transform(httpClient.executeAsync(request, createStringResponseHandler()), (stringResponse) -> {
             long duration = ticker.read() - startTime;
             aresDbMetrics.monitorQueryRequest(request, stringResponse, duration, TimeUnit.NANOSECONDS);
-            session.getSessionLogger().log(() -> "Aql Issue End " + index);
+            session.getSessionLogger().log(() -> String.format("Aql Issue End %d of split %d", aqlindex, splitIndex));
             if (isValidAresDbHttpResponseCode(stringResponse.getStatusCode())) {
                 return stringResponse.getBody();
             }

@@ -20,6 +20,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.base.MoreObjects.toStringHelper;
 import static java.util.Objects.requireNonNull;
@@ -30,6 +31,7 @@ public class AresDbSplit
     private final AresDbConnectorId connectorId;
     private final List<AQLExpression> expressions;
     private final List<AresQL> aqls;
+    private final int index;
 
     public static class AresQL
     {
@@ -63,17 +65,39 @@ public class AresDbSplit
                     .add("cacheable", cacheable)
                     .toString();
         }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            AresQL aresQL = (AresQL) o;
+            return cacheable == aresQL.cacheable &&
+                    Objects.equals(aql, aresQL.aql);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hash(aql, cacheable);
+        }
     }
 
     @JsonCreator
     public AresDbSplit(
             @JsonProperty("connectorId") AresDbConnectorId connectorId,
             @JsonProperty("expressions") List<AQLExpression> expressions,
-            @JsonProperty("aqls") List<AresQL> aqls)
+            @JsonProperty("aqls") List<AresQL> aqls,
+            @JsonProperty("index") int index)
     {
         this.connectorId = requireNonNull(connectorId, "connector id is null");
         this.expressions = requireNonNull(expressions, "expressions is null");
         this.aqls = requireNonNull(aqls, "aqls is null");
+        this.index = index;
     }
 
     @JsonProperty
@@ -100,9 +124,16 @@ public class AresDbSplit
         return null;
     }
 
+    @JsonProperty
     public List<AresQL> getAqls()
     {
         return aqls;
+    }
+
+    @JsonProperty
+    public int getIndex()
+    {
+        return index;
     }
 
     @Override
@@ -112,6 +143,7 @@ public class AresDbSplit
                 .add("connectorId", connectorId)
                 .add("expressions", expressions)
                 .add("aqls", aqls)
+                .add("index", index)
                 .toString();
     }
 

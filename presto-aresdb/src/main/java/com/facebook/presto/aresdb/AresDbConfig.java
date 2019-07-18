@@ -51,7 +51,7 @@ public class AresDbConfig
     // based on size bounds and not time.
     private Duration cacheDuration = new Duration(0, TimeUnit.SECONDS);
     private DataSize maxCacheSize = new DataSize(0, DataSize.Unit.BYTE); // Default is not to cache
-    private int maxNumOfSplits = 3;
+    private int maxNumOfSplits = 1;
 
     @NotNull
     public String getServiceName()

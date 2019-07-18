@@ -94,10 +94,12 @@ public class AresDbSplitManager
         int numAqlsPerSplit = aqls.size() > maxNumSplits ? aqls.size() / maxNumSplits : 1;
         Preconditions.checkState(numAqlsPerSplit >= 1);
         int aqlIdx = 0;
+        int splitIndex = 0;
         while (aqlIdx < aqls.size()) {
             int newAqlIdx = Math.min(aqlIdx + numAqlsPerSplit, aqls.size());
-            splitBuilder.add(new AresDbSplit(aresDbTableLayoutHandle.getTable().getConnectorId(), fullRequest.getExpressions(), ImmutableList.copyOf(aqls.subList(aqlIdx, newAqlIdx))));
+            splitBuilder.add(new AresDbSplit(aresDbTableLayoutHandle.getTable().getConnectorId(), fullRequest.getExpressions(), ImmutableList.copyOf(aqls.subList(aqlIdx, newAqlIdx)), splitIndex));
             aqlIdx = newAqlIdx;
+            ++splitIndex;
         }
         return new FixedSplitSource(splitBuilder.build());
     }
