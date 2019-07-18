@@ -17,13 +17,15 @@
 
 import argparse
 import collections
+import cStringIO
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 import re
 import requests
 from requests.adapters import HTTPAdapter
 import socket
-import sched
+import threading
 import sys
 import time
 import urllib3
@@ -105,16 +107,9 @@ METRICS = [
     "metrics": ["activeconnectionsperdestination", "connectionstats", "threadpool"]
 },
 {
-    "prefix": "presto.coordinator.system",
-    "mbean": "java.lang:type=OperatingSystem",
-    "metrics": ["SystemLoadAverage", "", "ProcessCpuLoad", "TotalPhysicalMemorySize",
-                "FreePhysicalMemorySize", "TotalSwapSpaceSize", "FreeSwapSpaceSize",
-                "OpenFileDescriptorCount"]
-},
-{
     "prefix": "presto.worker.system",
     "mbean": "java.lang:type=OperatingSystem",
-    "metrics": ["SystemLoadAverage", "", "ProcessCpuLoad", "TotalPhysicalMemorySize",
+    "metrics": ["SystemLoadAverage", "ProcessCpuLoad", "TotalPhysicalMemorySize",
                 "FreePhysicalMemorySize", "TotalSwapSpaceSize", "FreeSwapSpaceSize",
                 "OpenFileDescriptorCount"]
 },
@@ -142,11 +137,15 @@ METRICS = [
 },
 {
     "prefix": "presto.rta.pinot",
-    "mbean_prefix": "com.facebook.presto.aresdb:type=PinotMetrics"
+    "mbean_prefix": "com.facebook.presto.pinot:type=PinotMetrics"
 },
 {
     "prefix": "presto.rta.rta",
     "mbean_prefix": "com.facebook.presto.rta:type=RtaMetrics"
+},
+{
+    "prefix": "presto.aresdb.pagesourceprovider",
+    "mbean_prefix": "com.facebook.presto.aresdb:type=AresDbPageSourceProvider"
 }
 ]
 
@@ -187,7 +186,7 @@ def filter_none(result):
         return
 
     for metric_name in result.keys():
-        if not result[metric_name]['value'] or result[metric_name]['value'] == 'NaN':
+        if result[metric_name]['value'] is None or result[metric_name]['value'] == 'NaN':
             result.pop(metric_name)
 
 def construct_regex(ll):
@@ -217,6 +216,7 @@ def requests_retry_session(
 ALL_TIME_SERIES = construct_regex(['OneMinute', 'FiveMinute', 'FifteenMinute', 'AllTime'])
 
 def get_all_jmx_metrics(port):
+    ts = time.time()
     url = 'http://127.0.0.1:' + str(port) + '/v1/jmx/mbean'
     try:
         response = requests_retry_session().get(url, timeout=5)
@@ -238,16 +238,16 @@ def get_all_jmx_metrics(port):
         if not object_name:
             next
         interested = object_name in metrics_per_mbean
-        for k, v in prefix_mbeans.items():
+        for k, v in prefix_mbeans.iteritems():
             if object_name.startswith(k):
                 v[1].append(object_name)
                 interested = True
         if interested:
             ret[object_name] = obj
-    ts = time.time()
-    if app_log.isEnabledFor(logging.DEBUG):
-        app_log.debug('All the metrics at time ' + str(int(ts)))
-        app_log.debug(ret)
+    # if app_log.isEnabledFor(logging.DEBUG):
+    #     app_log.debug('All the metrics at time ' + str(int(ts)))
+    #     for k, v in ret.iteritems():
+    #         app_log.debug('{} = {}'.format(k, json.dumps(v)))
     return (ret, ts)
 
 def get_metrics_helper(all_metrics, metric_name, metrics, ts):
@@ -308,7 +308,7 @@ def get_metrics_helper(all_metrics, metric_name, metrics, ts):
 def run_check(port, service_name, m3obj, debug):
     result = {}
     all_metrics, ts = get_all_jmx_metrics(port)
-    for metric_name, metrics in metrics_per_mbean.items():
+    for metric_name, metrics in metrics_per_mbean.iteritems():
         result.update(get_metrics_helper(all_metrics, metric_name, metrics, ts))
     for prefix_mbeans_value in prefix_mbeans.values():
         metrics = prefix_mbeans_value[0]
@@ -317,16 +317,41 @@ def run_check(port, service_name, m3obj, debug):
 
     filter_none(result)
     if debug:
-        app_log.info('Data for graphite:')
-        app_log.info(m3obj.format_for_graphite(service_name, result))
+        app_log.info('Data for graphite @ ' + str(ts))
+        to_dump = m3obj.format_for_graphite(service_name, result)
+        app_log.info(to_dump)
     m3obj.update(service_name, result)
+    return ts
 
 class FakeMetricsObject:
-    def update(self, service_name, result):
-        app_log.debug('Publishing ' + str(result))
+    def __init__(self):
+        try:
+            hostname = socket.gethostname()
+        except:
+            hostname = 'fake_hostname'
+        self.hostnames = [hostname]
 
-    def format_for_graphite(self, service_name, result):
-        return result
+    def update(self, service_name, result):
+        pass
+
+    # taken from the real ubermon/__init__.py
+    def format_for_graphite(self, service_name, metrics, log_meta_metrics=True):
+        data = cStringIO.StringIO()
+        app_log.info('Publishing for the name {} and {} with len {}'.format(service_name, type(metrics), len(metrics)))
+        for name, v in metrics.iteritems():
+            if name.startswith('cluster_metric.'):
+                names = [name]
+            else:
+                names = []
+                for host in self.hostnames:
+                    names.append('servers.%s.%s.%s' % (host, service_name, name))
+            for name in names:
+                line = '%s %f %i\n' % (
+                    name,
+                    v['value'],
+                    int(v['ts']))
+                data.write(line)
+        return data.getvalue()
 
 class RealUberMonWrapper:
     def __init__(self, config_path):
@@ -352,25 +377,23 @@ class FakeUberMonWrapper:
 
 def run_checks(port, service_name, debug=False):
     m3obj = ubermon_wrapper.create_m3_obj()
-    check_timeout = ubermon_wrapper.get_config('check_timeout', default=20)
 
     t0 = time.time()
+    ret = None
     try:
-        run_check(port, service_name, m3obj, debug)
+        ret = run_check(port, service_name, m3obj, debug)
     except Exception, e:
         app_log.exception(e)
     app_log.debug('completed in %0.2f seconds\n' % (time.time() - t0))
+    return ret
 
 def daemon_checks(right_away, port, service_name, interval=60, debug=False):
-    timer = sched.scheduler(time.time, time.sleep)
+    ticker = threading.Event()
+    next_interval = 0 if right_away else interval
+    while not ticker.wait(next_interval):
+        check_run_time = run_checks(port, service_name, debug)
+        next_interval = interval if check_run_time is None else max(check_run_time + interval - time.time(), 0)
 
-    def add(wait):
-        timer.enter(wait, 1, run_checks, [port, service_name, debug])
-
-    add(0 if right_away else interval)
-    while not timer.empty():
-        timer.run()
-        add(interval)
 
 app_log = None
 metrics_per_mbean = None
