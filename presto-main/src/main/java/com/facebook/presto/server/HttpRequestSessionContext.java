@@ -100,7 +100,7 @@ public final class HttpRequestSessionContext
     private final int queryLoggingSize;
     private final StatementProgressRecorder.Instance progressRecorderInstance;
 
-    public HttpRequestSessionContext(HttpServletRequest servletRequest, StatementProgressRecorder.Instance progressRecorderInstance)
+    public HttpRequestSessionContext(HttpServletRequest servletRequest, StatementProgressRecorder.Instance progressRecorderInstance, String user)
             throws WebApplicationException
     {
         catalog = trimEmptyToNull(servletRequest.getHeader(PRESTO_CATALOG));
@@ -108,7 +108,7 @@ public final class HttpRequestSessionContext
         path = trimEmptyToNull(servletRequest.getHeader(PRESTO_PATH));
         assertRequest((catalog != null) || (schema == null), "Schema is set but catalog is not");
 
-        String user = trimEmptyToNull(servletRequest.getHeader(PRESTO_USER));
+        user = trimEmptyToNull(user);
         assertRequest(user != null, "User must be set");
         identity = new Identity(user, Optional.ofNullable(servletRequest.getUserPrincipal()));
 
@@ -176,7 +176,7 @@ public final class HttpRequestSessionContext
     public HttpRequestSessionContext(HttpServletRequest servletRequest)
             throws WebApplicationException
     {
-        this(servletRequest, new StatementProgressRecorder().create());
+        this(servletRequest, new StatementProgressRecorder().create(), servletRequest.getHeader(PRESTO_USER));
     }
 
     @Override

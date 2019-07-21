@@ -23,6 +23,7 @@ import com.facebook.presto.server.ForStatementResource;
 import com.facebook.presto.server.HttpRequestSessionContext;
 import com.facebook.presto.server.SessionContext;
 import com.facebook.presto.server.StatementProgressRecorder;
+import com.facebook.presto.server.StatementResourceConfig;
 import com.facebook.presto.server.redirect.RedirectManager;
 import com.facebook.presto.server.redirect.RedirectRulesSpec;
 import com.facebook.presto.spi.QueryId;
@@ -118,6 +119,7 @@ public class StatementResource
     private final CounterStat createQueryRequests = new CounterStat();
 
     private final StatementProgressRecorder progressRecorder = new StatementProgressRecorder();
+    private final StatementResourceConfig statementResourceConfig;
 
     @Inject
     public StatementResource(
@@ -126,6 +128,7 @@ public class StatementResource
             ExchangeClientSupplier exchangeClientSupplier,
             BlockEncodingSerde blockEncodingSerde,
             RedirectManager redirectManager,
+            StatementResourceConfig statementResourceConfig,
             @ForStatementResource BoundedExecutor responseExecutor,
             @ForStatementResource ScheduledExecutorService timeoutExecutor)
     {
@@ -136,6 +139,7 @@ public class StatementResource
         this.responseExecutor = requireNonNull(responseExecutor, "responseExecutor is null");
         this.timeoutExecutor = requireNonNull(timeoutExecutor, "timeoutExecutor is null");
         this.redirectManager = requireNonNull(redirectManager, "redirectManager is null");
+        this.statementResourceConfig = requireNonNull(statementResourceConfig, "statement resource config is null");
 
         queryPurger.scheduleWithFixedDelay(new PurgeQueriesRunnable(queries, queryManager), 200, 200, MILLISECONDS);
     }
@@ -189,7 +193,7 @@ public class StatementResource
             proto = uriInfo.getRequestUri().getScheme();
         }
 
-        SessionContext sessionContext = new HttpRequestSessionContext(servletRequest, progressRecorder.create());
+        SessionContext sessionContext = new HttpRequestSessionContext(servletRequest, progressRecorder.create(), getUserFromRequest(servletRequest));
 
         if (sessionContext.getSource() == null || !sessionContext.getSource().equals("prism")) {
             String user = sessionContext.getSystemProperties().containsKey(QUERY_SUBMIT_USER)
@@ -218,6 +222,7 @@ public class StatementResource
                 blockEncodingSerde);
         queries.put(query.getQueryId(), query);
 
+        waitForEntireResponseMs = isNullOrEmpty(waitForEntireResponseMs) ? statementResourceConfig.getDefaultWaitForEntireResponseIntervalMs().map(x -> Long.toString(x.toMillis())).orElse(null) : waitForEntireResponseMs;
         if (isNullOrEmpty(waitForEntireResponseMs)) {
             // Just respond saying that the query has been created but not yet submitted
             Response respondImmediately = toResponse(query, query.getNextResult(OptionalLong.empty(), uriInfo, proto, DEFAULT_TARGET_RESULT_SIZE));
@@ -228,6 +233,11 @@ public class StatementResource
             Duration waitForEntireResponseDuration = new Duration(Long.valueOf(waitForEntireResponseMs), MILLISECONDS);
             asyncGetEntireQueryResults(query, uriInfo, proto, waitForEntireResponseDuration, asyncResponse);
         }
+    }
+
+    private String getUserFromRequest(HttpServletRequest servletRequest)
+    {
+        return statementResourceConfig.getHeadersForUser().stream().map(servletRequest::getHeader).filter(x -> !isNullOrEmpty(x)).findFirst().orElse(null);
     }
 
     @GET
