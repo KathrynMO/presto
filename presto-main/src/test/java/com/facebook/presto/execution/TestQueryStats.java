@@ -28,6 +28,7 @@ import org.testng.annotations.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import static io.airlift.units.DataSize.Unit.BYTE;
 import static io.airlift.units.DataSize.succinctBytes;
@@ -197,7 +198,7 @@ public class TestQueryStats
                     105,
                     106,
                     107)),
-
+            new Duration(0, TimeUnit.MILLISECONDS),
             operatorSummaries);
 
     @Test

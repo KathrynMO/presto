@@ -16,6 +16,7 @@ package com.facebook.presto.execution;
 import io.airlift.stats.CounterStat;
 import io.airlift.stats.DistributionStat;
 import io.airlift.stats.TimeStat;
+import io.airlift.units.Duration;
 import org.weakref.jmx.Managed;
 import org.weakref.jmx.Nested;
 
@@ -45,6 +46,8 @@ public class SqlQueryManagerStats
     private final CounterStat consumedInputBytes = new CounterStat();
     private final CounterStat consumedCpuTimeSecs = new CounterStat();
     private final TimeStat elapsedTime = new TimeStat(MILLISECONDS);
+    private final TimeStat scanBlockTime = new TimeStat(MILLISECONDS);
+    private final TimeStat nonScanBlockTime = new TimeStat(MILLISECONDS);
     private final TimeStat executionTime = new TimeStat(MILLISECONDS);
     private final TimeStat queuedTime = new TimeStat(MILLISECONDS);
     private final DistributionStat wallInputBytesRate = new DistributionStat();
@@ -85,6 +88,8 @@ public class SqlQueryManagerStats
         consumedInputRows.update(info.getQueryStats().getRawInputPositions());
         executionTime.add(info.getQueryStats().getExecutionTime());
         elapsedTime.add(info.getQueryStats().getElapsedTime());
+        scanBlockTime.add(info.getQueryStats().getScanBlockedTime());
+        nonScanBlockTime.add(new Duration(Math.max(info.getQueryStats().getElapsedTime().toMillis() - info.getQueryStats().getScanBlockedTime().toMillis(), 0), MILLISECONDS));
         queuedTime.add(info.getQueryStats().getQueuedTime());
 
         long executionWallMillis = info.getQueryStats().getExecutionTime().toMillis();
@@ -210,6 +215,20 @@ public class SqlQueryManagerStats
     public TimeStat getQueuedTime()
     {
         return queuedTime;
+    }
+
+    @Managed
+    @Nested
+    public TimeStat getScanBlockTime()
+    {
+        return scanBlockTime;
+    }
+
+    @Managed
+    @Nested
+    public TimeStat getNonScanBlockTime()
+    {
+        return nonScanBlockTime;
     }
 
     @Managed

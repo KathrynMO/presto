@@ -31,6 +31,7 @@ import org.testng.annotations.Test;
 import java.net.URI;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import java.util.concurrent.TimeUnit;
 
 import static com.facebook.presto.SessionTestUtils.TEST_SESSION;
 import static com.facebook.presto.execution.QueryState.RUNNING;
@@ -100,6 +101,7 @@ public class TestBasicQueryInfo
                                         105,
                                         106,
                                         107)),
+                                new Duration(0, TimeUnit.MILLISECONDS),
                                 ImmutableList.of()),
                         Optional.empty(),
                         Optional.empty(),

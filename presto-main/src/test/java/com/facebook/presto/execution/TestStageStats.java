@@ -67,6 +67,7 @@ public class TestStageStats
             25,
 
             new DataSize(26, BYTE),
+            0,
 
             new StageGcStatistics(
                     101,

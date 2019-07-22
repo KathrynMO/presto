@@ -34,6 +34,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import static com.facebook.presto.SystemSessionProperties.QUERY_PRIORITY;
@@ -157,6 +158,7 @@ public class MockQueryExecution
                         new DataSize(30, BYTE),
 
                         ImmutableList.of(),
+                        new Duration(0, TimeUnit.MILLISECONDS),
                         ImmutableList.of()),
                 Optional.empty(),
                 Optional.empty(),

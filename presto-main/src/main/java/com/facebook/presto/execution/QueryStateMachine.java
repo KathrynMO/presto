@@ -390,6 +390,11 @@ public class QueryStateMachine
                 resourceGroup);
     }
 
+    private static long calculateScanBlockedTimeMs(StageInfo stageInfo)
+    {
+        return stageInfo.getStageStats().getScanBlockedTimeMs() + stageInfo.getSubStages().stream().map(QueryStateMachine::calculateScanBlockedTimeMs).max(Long::compare).orElse(0L);
+    }
+
     private QueryStats getQueryStats(Optional<StageInfo> rootStage)
     {
         int totalTasks = 0;
@@ -468,10 +473,12 @@ public class QueryStateMachine
             operatorStatsSummary.addAll(stageInfo.getStageStats().getOperatorSummaries());
         }
 
+        long scanBlockedTime = 0L;
         if (rootStage.isPresent()) {
             StageStats outputStageStats = rootStage.get().getStageStats();
             outputDataSize += outputStageStats.getOutputDataSize().toBytes();
             outputPositions += outputStageStats.getOutputPositions();
+            scanBlockedTime = calculateScanBlockedTimeMs(rootStage.get());
         }
 
         boolean isScheduled = isScheduled(rootStage);
@@ -527,7 +534,7 @@ public class QueryStateMachine
                 succinctBytes(physicalWrittenDataSize),
 
                 stageGcStatistics.build(),
-
+                succinctDuration(scanBlockedTime, MILLISECONDS),
                 operatorStatsSummary.build());
     }
 
@@ -1004,6 +1011,7 @@ public class QueryStateMachine
                 queryStats.getOutputPositions(),
                 queryStats.getPhysicalWrittenDataSize(),
                 queryStats.getStageGcStatistics(),
+                queryStats.getScanBlockedTime(),
                 ImmutableList.of()); // Remove the operator summaries as OperatorInfo (especially ExchangeClientStatus) can hold onto a large amount of memory
     }
 

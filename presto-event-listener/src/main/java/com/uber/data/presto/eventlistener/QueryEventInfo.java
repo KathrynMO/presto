@@ -55,6 +55,7 @@ public class QueryEventInfo
     private final String remoteClientAddress;
     private final String userAgent;
     private final String sessionProperties;
+    private long scanBlockTimeMs;
     private int totalTasks;
     private int totalStages;
     private long endTimeMs;
@@ -207,6 +208,7 @@ public class QueryEventInfo
         this.peakMemoryReservation = queryStatistics.getPeakTotalNonRevocableMemoryBytes();
         this.rawInputPositions = queryStatistics.getTotalRows();
         this.rawInputDataSize = queryStatistics.getTotalBytes();
+        this.scanBlockTimeMs = queryStatistics.getScanBlockTime().toMillis();
 
         // Query IOMetadata
         this.columnAccess = getColumnAccess(queryIOMetadata.getInputs());
@@ -335,6 +337,7 @@ public class QueryEventInfo
         map.put("totalStages", this.totalStages);
         map.put("operatorSummaries", this.operatorSummaries);
         map.put("memorypool", this.memoryPool);
+        map.put("scanBlockTimeMs", this.scanBlockTimeMs);
         return map;
     }
 }

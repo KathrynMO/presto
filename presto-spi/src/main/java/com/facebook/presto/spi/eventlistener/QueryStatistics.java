@@ -54,6 +54,7 @@ public class QueryStatistics
     private final List<StageCpuDistribution> cpuTimeDistribution;
 
     private final List<String> operatorSummaries;
+    private final Duration scanBlockTime;
 
     public QueryStatistics(
             int totalTasks,
@@ -79,6 +80,7 @@ public class QueryStatistics
             boolean complete,
             List<StageCpuDistribution> cpuTimeDistribution,
             List<String> operatorSummaries,
+            Duration scanBlockTime,
             Optional<MemoryPoolId> memoryPoolId)
     {
         this.totalTasks = totalTasks;
@@ -105,6 +107,7 @@ public class QueryStatistics
         this.cpuTimeDistribution = requireNonNull(cpuTimeDistribution, "cpuTimeDistribution is null");
         this.operatorSummaries = requireNonNull(operatorSummaries, "operatorSummaries is null");
         this.memoryPoolId = requireNonNull(memoryPoolId, "memoryPoolId is null");
+        this.scanBlockTime = requireNonNull(scanBlockTime, "scanblock time is null");
     }
 
     public int getTotalTasks()
@@ -225,5 +228,10 @@ public class QueryStatistics
     public Optional<MemoryPoolId> getMemoryPoolId()
     {
         return memoryPoolId;
+    }
+
+    public Duration getScanBlockTime()
+    {
+        return scanBlockTime;
     }
 }

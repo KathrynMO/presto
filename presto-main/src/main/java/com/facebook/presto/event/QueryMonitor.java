@@ -161,6 +161,7 @@ public class QueryMonitor
                         true,
                         ImmutableList.of(),
                         ImmutableList.of(),
+                        ofMillis(0),
                         Optional.empty()),
                 createQueryContext(queryInfo.getSession(), queryInfo.getResourceGroupId()),
                 new QueryIOMetadata(ImmutableList.of(), Optional.empty(), ImmutableList.of()),
@@ -235,6 +236,7 @@ public class QueryMonitor
                 queryInfo.isCompleteInfo(),
                 getCpuDistributions(queryInfo),
                 operatorSummaries.build(),
+                ofMillis(queryStats.getScanBlockedTime().toMillis()),
                 Optional.of(queryInfo.getMemoryPool()));
     }
 

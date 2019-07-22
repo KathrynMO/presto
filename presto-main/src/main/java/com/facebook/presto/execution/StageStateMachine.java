@@ -19,12 +19,15 @@ import com.facebook.presto.execution.scheduler.SplitSchedulerStats;
 import com.facebook.presto.operator.BlockedReason;
 import com.facebook.presto.operator.OperatorStats;
 import com.facebook.presto.operator.PipelineStats;
+import com.facebook.presto.operator.ScanFilterAndProjectOperator;
+import com.facebook.presto.operator.TableScanOperator;
 import com.facebook.presto.operator.TaskStats;
 import com.facebook.presto.spi.eventlistener.StageGcStatistics;
 import com.facebook.presto.sql.planner.PlanFragment;
 import com.facebook.presto.sql.planner.plan.TableScanNode;
 import com.facebook.presto.util.Failures;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import io.airlift.log.Logger;
 import io.airlift.stats.Distribution;
 import org.joda.time.DateTime;
@@ -72,6 +75,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class StageStateMachine
 {
     private static final Logger log = Logger.get(StageStateMachine.class);
+    private static final Set<String> SCAN_OPERATORS = ImmutableSet.of(ScanFilterAndProjectOperator.class.getSimpleName(), TableScanOperator.class.getSimpleName());
 
     private final StageId stageId;
     private final URI location;
@@ -387,6 +391,8 @@ public class StageStateMachine
         int maxFullGcSec = 0;
         int totalFullGcSec = 0;
 
+        long scanBlockedTimeMs = 0;
+
         boolean fullyBlocked = true;
         Set<BlockedReason> blockedReasons = new HashSet<>();
 
@@ -444,10 +450,15 @@ public class StageStateMachine
             maxFullGcSec = max(maxFullGcSec, gcSec);
 
             for (PipelineStats pipeline : taskStats.getPipelines()) {
+                long totalPipelineScanBlockTime = 0L;
                 for (OperatorStats operatorStats : pipeline.getOperatorSummaries()) {
                     String id = pipeline.getPipelineId() + "." + operatorStats.getOperatorId();
                     operatorToStats.compute(id, (k, v) -> v == null ? operatorStats : v.add(operatorStats));
+                    if (SCAN_OPERATORS.contains(operatorStats.getOperatorType())) {
+                        totalPipelineScanBlockTime += operatorStats.getGetOutputWall().toMillis();
+                    }
                 }
+                scanBlockedTimeMs = max(scanBlockedTimeMs, totalPipelineScanBlockTime);
             }
         }
 
@@ -483,6 +494,7 @@ public class StageStateMachine
                 succinctBytes(outputDataSize),
                 outputPositions,
                 succinctBytes(physicalWrittenDataSize),
+                scanBlockedTimeMs,
 
                 new StageGcStatistics(
                         stageId.getId(),
