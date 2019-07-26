@@ -260,14 +260,14 @@ public class PinotMetadata
     public Optional<TableScanPipeline> pushProjectIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle,
             TableScanPipeline currentPipeline, ProjectPipelineNode project)
     {
-        return tryCreatingNewPipeline(pinotConfig::isProjectPushDownEnabled, currentPipeline, project);
+        return tryCreatingNewPipeline(pinotConfig::isProjectPushDownEnabled, currentPipeline, project, session);
     }
 
     @Override
     public Optional<TableScanPipeline> pushFilterIntoScan(ConnectorSession session, ConnectorTableHandle connectorTableHandle,
             TableScanPipeline currentPipeline, FilterPipelineNode filter)
     {
-        return tryCreatingNewPipeline(pinotConfig::isFilterPushDownEnabled, currentPipeline, filter);
+        return tryCreatingNewPipeline(pinotConfig::isFilterPushDownEnabled, currentPipeline, filter, session);
     }
 
     @Override
@@ -277,7 +277,7 @@ public class PinotMetadata
         if (aggregation.isPartial()) {
             return Optional.empty(); // partial aggregation is not supported
         }
-        return tryCreatingNewPipeline(pinotConfig::isAggregationPushDownEnabled, currentPipeline, aggregation);
+        return tryCreatingNewPipeline(pinotConfig::isAggregationPushDownEnabled, currentPipeline, aggregation, session);
     }
 
     @Override
@@ -287,11 +287,11 @@ public class PinotMetadata
             return Optional.empty();
         }
         else {
-            return tryCreatingNewPipeline(pinotConfig::isLimitPushDownEnabled, currentPipeline, limit);
+            return tryCreatingNewPipeline(pinotConfig::isLimitPushDownEnabled, currentPipeline, limit, session);
         }
     }
 
-    private Optional<TableScanPipeline> tryCreatingNewPipeline(Supplier<Boolean> isEnabled, TableScanPipeline scanPipeline, PipelineNode newPipelineNode)
+    private Optional<TableScanPipeline> tryCreatingNewPipeline(Supplier<Boolean> isEnabled, TableScanPipeline scanPipeline, PipelineNode newPipelineNode, ConnectorSession session)
     {
         if (!isEnabled.get()) {
             return Optional.empty();
@@ -300,7 +300,7 @@ public class PinotMetadata
         try {
             TableScanPipeline newPipeline = new TableScanPipeline(new ArrayList<>(scanPipeline.getPipelineNodes()), scanPipeline.getOutputColumnHandles());
             newPipeline.addPipeline(newPipelineNode, createDerivedColumnHandles(newPipelineNode));
-            PinotQueryGenerator.generatePQL(newPipeline, Optional.of(pinotConfig));
+            PinotQueryGenerator.generatePQL(newPipeline, Optional.of(pinotConfig), Optional.of(session));
             return Optional.of(newPipeline);
         }
         catch (Exception e) {

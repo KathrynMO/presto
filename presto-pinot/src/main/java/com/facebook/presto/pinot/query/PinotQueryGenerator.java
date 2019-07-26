@@ -19,6 +19,7 @@ import com.facebook.presto.pinot.PinotException;
 import com.facebook.presto.pinot.PinotTableHandle;
 import com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Selection;
 import com.facebook.presto.spi.ColumnHandle;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.pipeline.AggregationPipelineNode;
 import com.facebook.presto.spi.pipeline.AggregationPipelineNode.Aggregation;
 import com.facebook.presto.spi.pipeline.FilterPipelineNode;
@@ -52,19 +53,22 @@ import static java.util.Objects.requireNonNull;
 
 public class PinotQueryGenerator
 {
-    private PinotQueryGenerator()
+    private final Optional<PinotConfig> pinotConfig;
+
+    private PinotQueryGenerator(Optional<PinotConfig> pinotConfig, Optional<ConnectorSession> session)
     {
+        this.pinotConfig = pinotConfig;
     }
 
-    public static GeneratedPql generateForSingleBrokerRequest(TableScanPipeline scanPipeline, Optional<List<PinotColumnHandle>> columnHandles, Optional<PinotConfig> pinotConfig)
+    public static GeneratedPql generateForSingleBrokerRequest(TableScanPipeline scanPipeline, Optional<List<PinotColumnHandle>> columnHandles, Optional<PinotConfig> pinotConfig, Optional<ConnectorSession> session)
     {
-        return generateHelper(scanPipeline, columnHandles, new PinotPushDownPipelineConverter(Optional.empty(), Optional.empty()), pinotConfig, true);
+        return generateHelper(scanPipeline, columnHandles, new PinotPushDownPipelineConverter(Optional.empty(), Optional.empty(), session), pinotConfig, true);
     }
 
     public static GeneratedPql generateForSegmentSplits(TableScanPipeline scanPipeline, Optional<String> tableNameSuffix,
-            Optional<String> timeBoundaryFilter, Optional<PinotConfig> pinotConfig)
+            Optional<String> timeBoundaryFilter, Optional<PinotConfig> pinotConfig, Optional<ConnectorSession> session)
     {
-        return generateHelper(scanPipeline, Optional.empty(), new PinotPushDownPipelineConverter(tableNameSuffix, timeBoundaryFilter), pinotConfig, false);
+        return generateHelper(scanPipeline, Optional.empty(), new PinotPushDownPipelineConverter(tableNameSuffix, timeBoundaryFilter, session), pinotConfig, false);
     }
 
     private static GeneratedPql generateHelper(TableScanPipeline scanPipeline, Optional<List<PinotColumnHandle>> columnHandles, PinotPushDownPipelineConverter visitor, Optional<PinotConfig> pinotConfig, boolean forBrokerPageResource)
@@ -78,9 +82,9 @@ public class PinotQueryGenerator
         return context.toQuery(columnHandles, pinotConfig, forBrokerPageResource);
     }
 
-    public static String generatePQL(TableScanPipeline scanPipeline, Optional<PinotConfig> pinotConfig)
+    public static String generatePQL(TableScanPipeline scanPipeline, Optional<PinotConfig> pinotConfig, Optional<ConnectorSession> session)
     {
-        return generateForSegmentSplits(scanPipeline, Optional.empty(), Optional.empty(), pinotConfig).getPql();
+        return generateForSegmentSplits(scanPipeline, Optional.empty(), Optional.empty(), pinotConfig, session).getPql();
     }
 
     public static class GeneratedPql
@@ -145,11 +149,13 @@ public class PinotQueryGenerator
 
         private final Optional<String> tableNameSuffix;
         private final Optional<String> timeBoundaryFilter;
+        private final Optional<ConnectorSession> session;
 
-        public PinotPushDownPipelineConverter(Optional<String> tableNameSuffix, Optional<String> timeBoundaryFilter)
+        public PinotPushDownPipelineConverter(Optional<String> tableNameSuffix, Optional<String> timeBoundaryFilter, Optional<ConnectorSession> session)
         {
             this.tableNameSuffix = tableNameSuffix;
             this.timeBoundaryFilter = timeBoundaryFilter;
+            this.session = session;
         }
 
         private static String handleAggregationFunction(Aggregation aggregation, Map<String, Selection> inputSelections)
@@ -275,7 +281,7 @@ public class PinotQueryGenerator
             List<Type> outputTypes = project.getRowType();
             for (int fieldId = 0; fieldId < pushdownExpressions.size(); fieldId++) {
                 PushDownExpression pushdownExpression = pushdownExpressions.get(fieldId);
-                PinotExpression pinotExpression = pushdownExpression.accept(new PinotProjectExpressionConverter(), context.getSelections());
+                PinotExpression pinotExpression = pushdownExpression.accept(new PinotProjectExpressionConverter(session), context.getSelections());
                 newSelections.put(
                         outputColumns.get(fieldId),
                         new Selection(pinotExpression.getDefinition(), pinotExpression.getOrigin(), outputTypes.get(fieldId)));

@@ -36,6 +36,7 @@ public class PinotSessionProperties
     private static final String SCAN_PARALLELISM_ENABLED = "scan_parallelism_enabled";
     private static final String IGNORE_EMPTY_RESPONSES = "ignore_empty_responses";
     private static final String RETRY_COUNT = "retry_count";
+    private static final String USE_PRESTO_DATE_TRUNC = "use_presto_date_trunc";
 
     private final List<PropertyMetadata<?>> sessionProperties;
 
@@ -69,6 +70,11 @@ public class PinotSessionProperties
         return session.getProperty(RETRY_COUNT, Integer.class);
     }
 
+    public static boolean isUsePrestoDateTrunc(ConnectorSession session)
+    {
+        return session.getProperty(USE_PRESTO_DATE_TRUNC, Boolean.class);
+    }
+
     @Inject
     public PinotSessionProperties(PinotConfig pinotConfig)
     {
@@ -88,9 +94,15 @@ public class PinotSessionProperties
                         "Ignore empty or missing pinot server responses",
                         pinotConfig.isIgnoreEmptyResponses(),
                         false),
-                integerProperty(RETRY_COUNT,
+                integerProperty(
+                        RETRY_COUNT,
                         "Retry count for retriable pinot data fetch calls",
                         pinotConfig.getFetchRetryCount(),
+                        false),
+                booleanProperty(
+                        USE_PRESTO_DATE_TRUNC,
+                        "Use SQL compatible date_trunc",
+                        pinotConfig.isUsePrestoDateTrunc(),
                         false),
                 new PropertyMetadata<>(
                         CONNECTION_TIMEOUT,

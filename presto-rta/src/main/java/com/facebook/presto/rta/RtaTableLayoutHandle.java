@@ -108,7 +108,7 @@ public class RtaTableLayoutHandle
             case ARESDB:
                 return AresDbQueryGenerator.generate(scanPipeline.get(), Optional.empty(), Optional.empty());
             case PINOT:
-                return PinotQueryGenerator.generatePQL(scanPipeline.get(), Optional.empty());
+                return PinotQueryGenerator.generatePQL(scanPipeline.get(), Optional.empty(), Optional.empty());
             default:
                 throw new IllegalStateException("Unknown connector type " + table.getKey().getType());
         }

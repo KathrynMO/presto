@@ -152,7 +152,7 @@ public class PinotSplitManager
         if (ScanParallelismFinder.canParallelize(PinotSessionProperties.isScanParallelismEnabled(session), scanPipeline)) {
             scanPipeline = addTupleDomainToScanPipelineIfNeeded(pinotLayoutHandle.getConstraint(), scanPipeline);
 
-            return generateSplitsForSegmentBasedScan(pinotLayoutHandle, scanPipeline, PinotSessionProperties.getNumSegmentsPerSplit(session));
+            return generateSplitsForSegmentBasedScan(pinotLayoutHandle, scanPipeline, session);
         }
         else {
             return generateSplitForBrokerBasedScan(scanPipeline);
@@ -164,7 +164,7 @@ public class PinotSplitManager
         return new FixedSplitSource(singletonList(createBrokerSplit(connectorId, scanPipeline)));
     }
 
-    protected ConnectorSplitSource generateSplitsForSegmentBasedScan(PinotTableLayoutHandle pinotLayoutHandle, TableScanPipeline scanPipeline, int segmentsPerSplit)
+    protected ConnectorSplitSource generateSplitsForSegmentBasedScan(PinotTableLayoutHandle pinotLayoutHandle, TableScanPipeline scanPipeline, ConnectorSession session)
     {
         PinotTableHandle tableHandle = pinotLayoutHandle.getTable();
         String tableName = tableHandle.getTableName();
@@ -193,8 +193,8 @@ public class PinotSplitManager
 
         List<ConnectorSplit> splits = new ArrayList<>();
         if (!routingTable.isEmpty()) {
-            generateSegmentSplits(splits, routingTable, onlineTimePredicate, tableName, "_REALTIME", scanPipeline, segmentsPerSplit);
-            generateSegmentSplits(splits, routingTable, offlineTimePredicate, tableName, "_OFFLINE", scanPipeline, segmentsPerSplit);
+            generateSegmentSplits(splits, routingTable, onlineTimePredicate, tableName, "_REALTIME", scanPipeline, session);
+            generateSegmentSplits(splits, routingTable, offlineTimePredicate, tableName, "_OFFLINE", scanPipeline, session);
         }
 
         Collections.shuffle(splits);
@@ -202,7 +202,7 @@ public class PinotSplitManager
     }
 
     protected void generateSegmentSplits(List<ConnectorSplit> splits, Map<String, Map<String, List<String>>> routingTable, Optional<String> timePredicate,
-            String tableName, String tableNameSuffix, TableScanPipeline scanPipeline, int segmentsPerSplit)
+            String tableName, String tableNameSuffix, TableScanPipeline scanPipeline, ConnectorSession session)
     {
         final String finalTableName = tableName + tableNameSuffix;
         for (String routingTableName : routingTable.keySet()) {
@@ -210,12 +210,12 @@ public class PinotSplitManager
                 continue;
             }
 
-            String pql = PinotQueryGenerator.generateForSegmentSplits(scanPipeline, Optional.of(tableNameSuffix), timePredicate, Optional.of(pinotConfig)).getPql();
+            String pql = PinotQueryGenerator.generateForSegmentSplits(scanPipeline, Optional.of(tableNameSuffix), timePredicate, Optional.of(pinotConfig), Optional.of(session)).getPql();
 
             Map<String, List<String>> hostToSegmentsMap = routingTable.get(routingTableName);
             hostToSegmentsMap.forEach((host, segments) -> {
                 // segments is already shuffled
-                Iterables.partition(segments, Math.min(segments.size(), segmentsPerSplit)).forEach(segmentsForThisSplit -> splits.add(createSegmentSplit(connectorId, pql, segmentsForThisSplit, host)));
+                Iterables.partition(segments, Math.min(segments.size(), PinotSessionProperties.getNumSegmentsPerSplit(session))).forEach(segmentsForThisSplit -> splits.add(createSegmentSplit(connectorId, pql, segmentsForThisSplit, host)));
             });
         }
     }

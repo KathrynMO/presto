@@ -14,8 +14,10 @@
 package com.facebook.presto.pinot.query;
 
 import com.facebook.presto.pinot.PinotException;
+import com.facebook.presto.pinot.PinotSessionProperties;
 import com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Origin;
 import com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Selection;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.pipeline.PushDownArithmeticExpression;
 import com.facebook.presto.spi.pipeline.PushDownBetweenExpression;
 import com.facebook.presto.spi.pipeline.PushDownCastExpression;
@@ -30,6 +32,7 @@ import com.facebook.presto.spi.pipeline.PushDownNotExpression;
 import com.facebook.presto.spi.type.StandardTypes;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import org.joda.time.DateTimeZone;
 
 import java.util.Map;
 import java.util.Objects;
@@ -57,6 +60,13 @@ class PinotProjectExpressionConverter
 
     private static final Set<String> TIME_EQUIVALENT_TYPES = ImmutableSet.of(StandardTypes.BIGINT, StandardTypes.INTEGER, StandardTypes.TINYINT, StandardTypes.SMALLINT);
 
+    private final Optional<ConnectorSession> session;
+
+    public PinotProjectExpressionConverter(Optional<ConnectorSession> session)
+    {
+        this.session = session;
+    }
+
     @Override
     public PinotExpression visitInputColumn(PushDownInputColumn inputColumn, Map<String, Selection> context)
     {
@@ -69,7 +79,10 @@ class PinotProjectExpressionConverter
     {
         switch (function.getName().toLowerCase(ENGLISH)) {
             case "date_trunc":
-                return handleDateTrunc(function, context);
+                boolean usePrestoDateTrunc = session.isPresent() ? PinotSessionProperties.isUsePrestoDateTrunc(session.get()) : false;
+                return usePrestoDateTrunc ?
+                    handleDateTruncViaPrestoDateTrunc(function, context) :
+                    handleDateTruncViaDateTimeConvert(function, context);
             default:
                 throw new PinotException(PINOT_UNSUPPORTED_EXPRESSION, Optional.empty(), format("function %s not supported yet", function.getName()));
         }
@@ -89,7 +102,7 @@ class PinotProjectExpressionConverter
         throw new PinotException(PINOT_UNSUPPORTED_EXPRESSION, Optional.empty(), "Could not dig function out of expression: " + originalExpression + ", inside of " + expression);
     }
 
-    private PinotExpression handleDateTrunc(PushDownFunction function, Map<String, Selection> context)
+    private PinotExpression handleDateTruncViaDateTimeConvert(PushDownFunction function, Map<String, Selection> context)
     {
         // Convert SQL standard function `DATE_TRUNC(INTERVAL, DATE/TIMESTAMP COLUMN)` to
         // Pinot's equivalent function `dateTimeConvert(columnName, inputFormat, outputFormat, outputGranularity)`
@@ -150,6 +163,46 @@ class PinotProjectExpressionConverter
         }
 
         return derived("dateTimeConvert(" + inputColumn + ", " + inputFormat + ", " + outputFormat + ", " + outputGranularity + ")");
+    }
+
+    private static String getTimeZoneFromExpression(PushDownExpression pushDownExpression)
+    {
+        if (pushDownExpression instanceof PushDownLiteral) {
+            String strValue = ((PushDownLiteral) pushDownExpression).getStrValue();
+            if (strValue != null) {
+                return strValue;
+            }
+        }
+        throw new PinotException(PINOT_UNSUPPORTED_EXPRESSION, Optional.empty(), "Only support string literal as the second argument of from_unixtime for timezone");
+    }
+
+    private PinotExpression handleDateTruncViaPrestoDateTrunc(PushDownFunction function, Map<String, Selection> context)
+    {
+        PushDownExpression timeInputParameter = function.getInputs().get(1);
+        String inputColumn;
+        String inputTimeZone;
+        String inputFormat;
+
+        PushDownFunction timeConversion = getExpressionAsFunction(timeInputParameter, timeInputParameter, context);
+        switch (timeConversion.getName().toLowerCase(ENGLISH)) {
+            case "from_unixtime":
+                inputColumn = timeConversion.getInputs().get(0).accept(this, context).getDefinition();
+                inputTimeZone = timeConversion.getInputs().size() > 1 ? getTimeZoneFromExpression(timeConversion.getInputs().get(1)) : DateTimeZone.UTC.getID();
+                inputFormat = "seconds";
+                break;
+            default:
+                throw new PinotException(PINOT_UNSUPPORTED_EXPRESSION, Optional.empty(), "not supported: " + timeConversion.getName());
+        }
+
+        PushDownExpression intervalParameter = function.getInputs().get(0);
+        if (!(intervalParameter instanceof PushDownLiteral)) {
+            throw new PinotException(PINOT_UNSUPPORTED_EXPRESSION, Optional.empty(),
+                "interval unit in date_trunc is not supported: " + intervalParameter);
+        }
+
+        PushDownLiteral intervalUnit = (PushDownLiteral) intervalParameter;
+
+        return derived("prestoDateTrunc(" + inputColumn + "," + inputFormat + ", " + inputTimeZone + ", " + intervalUnit.getStrValue() + ")");
     }
 
     @Override

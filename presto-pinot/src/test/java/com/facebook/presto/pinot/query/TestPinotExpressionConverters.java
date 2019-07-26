@@ -13,21 +13,29 @@
  */
 package com.facebook.presto.pinot.query;
 
+import com.facebook.presto.pinot.PinotConfig;
 import com.facebook.presto.pinot.PinotException;
+import com.facebook.presto.pinot.PinotSessionProperties;
 import com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Selection;
+import com.facebook.presto.spi.ConnectorSession;
 import com.facebook.presto.spi.pipeline.PushDownExpression;
+import com.facebook.presto.sql.analyzer.FeaturesConfig;
+import com.facebook.presto.testing.TestingConnectorSession;
 import com.google.common.collect.ImmutableMap;
 import org.testng.annotations.Test;
 
 import java.util.Map;
+import java.util.Optional;
 
 import static com.facebook.presto.pinot.PinotErrorCode.PINOT_UNSUPPORTED_EXPRESSION;
 import static com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Origin.DERIVED;
 import static com.facebook.presto.pinot.query.PinotQueryGeneratorContext.Origin.TABLE_COLUMN;
 import static com.facebook.presto.spi.type.BigintType.BIGINT;
 import static com.facebook.presto.spi.type.DoubleType.DOUBLE;
+import static com.facebook.presto.spi.type.TimeZoneKey.getTimeZoneKey;
 import static com.facebook.presto.spi.type.VarcharType.VARCHAR;
 import static com.facebook.presto.testing.PushdownTestUtils.pdExpr;
+import static java.util.Locale.ENGLISH;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.fail;
 
@@ -57,6 +65,18 @@ public class TestPinotExpressionConverters
         // combinations
         testProject("date_trunc('hour', from_unixtime(secondssinceepoch + 2))",
                 "dateTimeConvert(ADD(secondsSinceEpoch, 2), '1:SECONDS:EPOCH', '1:MILLISECONDS:EPOCH', '1:HOURS')");
+
+        ConnectorSession session = new TestingConnectorSession(new PinotSessionProperties(new PinotConfig().setUsePrestoDateTrunc(true)).getSessionProperties());
+        testProject("date_trunc('hour', from_unixtime(secondssinceepoch + 2))",
+                "prestoDateTrunc(ADD(secondsSinceEpoch, 2),seconds, UTC, hour)", session);
+
+        testProject("date_trunc('hour', from_unixtime(secondssinceepoch + 2, 'America/New_York'))",
+                "prestoDateTrunc(ADD(secondsSinceEpoch, 2),seconds, America/New_York, hour)", session);
+
+        session = new TestingConnectorSession("user", Optional.of("test"), Optional.empty(), getTimeZoneKey("America/New_York"), ENGLISH, System.currentTimeMillis(), new PinotSessionProperties(new PinotConfig().setUsePrestoDateTrunc(true)).getSessionProperties(), ImmutableMap.of(), new FeaturesConfig().isLegacyTimestamp());
+        // The timezone in the output is still UTC, and not America/New_York as set in the session
+        testProject("date_trunc('hour', from_unixtime(secondssinceepoch + 2))",
+                "prestoDateTrunc(ADD(secondsSinceEpoch, 2),seconds, UTC, hour)", session);
 
         testProject("secondssinceepoch + 1559978258.674", "ADD(secondsSinceEpoch, 1559978258.674000)");
         testProject("secondssinceepoch + 1559978258", "ADD(secondsSinceEpoch, 1559978258)");
@@ -91,7 +111,15 @@ public class TestPinotExpressionConverters
     private void testProject(String sqlExpression, String expectedPinotExpression)
     {
         PushDownExpression pushDownExpression = pdExpr(sqlExpression);
-        String actualPinotExpression = pushDownExpression.accept(new PinotProjectExpressionConverter(), TEST_INPUT).getDefinition();
+        ConnectorSession session = new TestingConnectorSession(new PinotSessionProperties(new PinotConfig().setUsePrestoDateTrunc(false)).getSessionProperties());
+        String actualPinotExpression = pushDownExpression.accept(new PinotProjectExpressionConverter(Optional.of(session)), TEST_INPUT).getDefinition();
+        assertEquals(actualPinotExpression, expectedPinotExpression);
+    }
+
+    private void testProject(String sqlExpression, String expectedPinotExpression, ConnectorSession session)
+    {
+        PushDownExpression pushDownExpression = pdExpr(sqlExpression);
+        String actualPinotExpression = pushDownExpression.accept(new PinotProjectExpressionConverter(Optional.of(session)), TEST_INPUT).getDefinition();
         assertEquals(actualPinotExpression, expectedPinotExpression);
     }
 

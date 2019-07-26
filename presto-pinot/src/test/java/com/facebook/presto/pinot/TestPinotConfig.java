@@ -56,7 +56,8 @@ public class TestPinotConfig
                         .setNumSegmentsPerSplit(1)
                         .setFetchRetryCount(2)
                         .setIgnoreEmptyResponses(false)
-                        .setLimitPushDownEnabled(true));
+                        .setLimitPushDownEnabled(true)
+                        .setUsePrestoDateTrunc(false));
     }
 
     @Test
@@ -92,6 +93,7 @@ public class TestPinotConfig
                 .put("num-segments-per-split", "2")
                 .put("ignore-empty-responses", "true")
                 .put("fetch-retry-count", "3")
+                .put("use-presto-date-trunc", "true")
                 .build();
 
         PinotConfig expected = new PinotConfig()
@@ -123,7 +125,8 @@ public class TestPinotConfig
                 .setNumSegmentsPerSplit(2)
                 .setIgnoreEmptyResponses(true)
                 .setFetchRetryCount(3)
-                .setLimitPushDownEnabled(false);
+                .setLimitPushDownEnabled(false)
+                .setUsePrestoDateTrunc(true);
 
         ConfigAssertions.assertFullMapping(properties, expected);
     }

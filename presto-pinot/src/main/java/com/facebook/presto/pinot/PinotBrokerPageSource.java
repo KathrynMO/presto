@@ -161,7 +161,7 @@ public class PinotBrokerPageSource
         }
 
         long start = System.nanoTime();
-        PinotQueryGenerator.GeneratedPql psql = PinotQueryGenerator.generateForSingleBrokerRequest(scanPipeline, Optional.of(columnHandles), Optional.of(pinotConfig));
+        PinotQueryGenerator.GeneratedPql psql = PinotQueryGenerator.generateForSingleBrokerRequest(scanPipeline, Optional.of(columnHandles), Optional.of(pinotConfig), Optional.of(session));
         try {
             List<Type> expectedTypes = columnHandles.stream().map(PinotColumnHandle::getDataType).collect(Collectors.toList());
             PageBuilder pageBuilder = new PageBuilder(expectedTypes);

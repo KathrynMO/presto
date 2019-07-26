@@ -78,6 +78,7 @@ public class PinotConfig
     private int numSegmentsPerSplit = 1;
     private boolean ignoreEmptyResponses;
     private int fetchRetryCount = 2;
+    private boolean usePrestoDateTrunc;
 
     @NotNull
     public Map<String, String> getExtraHttpHeaders()
@@ -445,6 +446,18 @@ public class PinotConfig
     public PinotConfig setForceSingleNodePlan(boolean forceSingleNodePlan)
     {
         this.forceSingleNodePlan = forceSingleNodePlan;
+        return this;
+    }
+
+    public boolean isUsePrestoDateTrunc()
+    {
+        return usePrestoDateTrunc;
+    }
+
+    @Config("use-presto-date-trunc")
+    public PinotConfig setUsePrestoDateTrunc(boolean usePrestoDateTrunc)
+    {
+        this.usePrestoDateTrunc = usePrestoDateTrunc;
         return this;
     }
 
